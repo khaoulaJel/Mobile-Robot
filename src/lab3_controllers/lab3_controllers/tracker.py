@@ -30,6 +30,7 @@ from lab3_controllers.common import (
     go_to_point_control, lookahead_point, pose_control, project_on_path,
     pure_pursuit_control, wrap_angle, yaw_p_control)
 from lab3_controllers.compensation import Compensator
+from lab3_controllers.observer import HeadingObserver
 
 GO, ALIGN, DONE = 'GO', 'ALIGN', 'DONE'
 STRATEGIES = ('stop_turn', 'polar', 'pure_pursuit')
@@ -75,6 +76,9 @@ DEFAULTS = dict(
     rest_corner_deg=30.0,            # verify at points where the path turns by more than this
     smooth_yaw_tolerance=0.0,        # rad  looser heading tolerance at smooth (non-corner, non-final) points;
                                      #      0 = same as yaw_tolerance. Avoids pointless in-place turns on curves.
+    pose_latency=0.0,                # s   timed mode: delay of the state message (the sample is older than its arrival)
+    vel_span=0.0,                    # s   timed mode: speed = least-squares slope over this many seconds of samples (0 = use vel_window)
+    rest_mean_test=False,            # timed mode: judge "at rest" by window averages (robust to noisy poses)
     rest_retries=4,                  # heading pulses per point before accepting the heading
     pos_retries=3,                   # position re-approaches per point before accepting the position
     # --- robot command filter (professor's input_filter): commands outside the diamond or inside the
@@ -132,12 +136,13 @@ class PathTracker(Compensator):
     # ======================================================================================
     # ONE CONTROL STEP
     # ======================================================================================
-    def step(self, pose, dt=0.05):
-        """Return the (v, w) command for the measured pose (x, y, yaw)."""
+    def step(self, pose, dt=0.05, stamp=None, age=0.0):
+        """Return the (v, w) command for the measured pose (x, y, yaw). `stamp` (time of the measurement) and `age` (seconds
+        since it arrived) switch on the timed mode for a slow, late state (see compensation.py); None = the classic mode."""
         if self.mode == DONE:
             return 0.0, 0.0
         # With compensation on, control the pose the robot WILL rest at; otherwise this is the pose itself.
-        x, y, yaw = self._predict(pose, dt)
+        x, y, yaw = self._predict(pose, dt) if stamp is None else self._predict_timed(pose, stamp, age)
 
         v = w = 0.0
         if self.mode == GO:
@@ -318,13 +323,13 @@ class PathTracker(Compensator):
         if self._pulse_left <= 0:
             self._fine, self._wait = 'settle', 0
             self._min_wait = int(p['settle_time'] / dt)
-            self._hist.clear()                    # the at-rest window must contain only post-pulse data
+            self._clear_rest_history()            # the at-rest window must contain only post-pulse data
         return 0.0, self._pulse_w
 
 
 # ---- yaw controller (single-state P heading control) -------------------------------------------
 # Parameters shared with the motion controller (same meaning, same defaults).
-COMPENSATION_KEYS = ('lead_w', 'vel_filter', 'vel_window', 'rest_window', 'rest_pos', 'rest_yaw', 'rest_timeout',
+COMPENSATION_KEYS = ('lead_w', 'pose_latency', 'vel_span', 'rest_mean_test', 'vel_filter', 'vel_window', 'rest_window', 'rest_pos', 'rest_yaw', 'rest_timeout',
                      'settle_time', 'rest_retries', 'pulse_w', 'pulse_extra',
                      'diamond_v', 'diamond_w', 'deadband_v', 'deadband_w')
 
@@ -334,6 +339,13 @@ YAW_DEFAULTS = dict(
     min_angular_speed=0.0,           # rad/s deadband compensation (legacy mode)
     tolerance=0.005,                 # rad
     hold_band=3.0,                   # x tolerance: a settled robot pushed further than this re-engages
+    # --- model-based observer (timed mode only): simulate the robot from the commands we sent, correct it with the late pose ---
+    use_observer=False,              # predict the present heading with the model instead of extrapolating noisy poses
+    obs_tau=0.8,                     # s   robot turn-rate lag (time constant)
+    obs_gain=1.0,                    #     robot turn-rate gain (achieved / commanded)
+    obs_k1=0.5,                      #     how much of the heading difference a new sample corrects (0..1)
+    obs_k2=0.5,                      #     1/s how much of it corrects the turn rate
+    ki=0.0,                          # 1/s^2 integral gain (PID form): pushes through the last degrees; 0 = off
     lead_v=0.0,                      # unused by the yaw controller (the shared predictor reads it)
     **{k: DEFAULTS[k] for k in COMPENSATION_KEYS})
 
@@ -351,9 +363,21 @@ class YawTracker(Compensator):
         self.ref = None
         self.reached = False
         self.events = []
+        self._obs = None             # HeadingObserver, built on first use
+        self._clock = 0.0            # own clock when the caller passes no time
+        self._obs_stamp = None
+        self._u_sent = 0.0           # the command that was really sent (the model needs it)
+        self._cmd_fed = False
         self._reset()
 
+    def observe_command(self, w_sent):
+        """Tell the controller the turn rate that was really published (after the caller's acceleration limit). Optional:
+        without it the observer assumes the command this controller returned."""
+        self._u_sent = w_sent
+        self._cmd_fed = True
+
     def _reset(self):
+        self._i = 0.0                # integral term
         self._fine = 'turn'          # turn -> settle -> pulse -> settle ... -> hold
         self._wait = self._min_wait = self._retries = 0
         self._pulse_left = 0
@@ -364,14 +388,42 @@ class YawTracker(Compensator):
         ev, self.events = self.events, []
         return ev
 
-    def step(self, yaw, ref, dt):
-        """Return the angular speed command for the current heading `yaw` and reference `ref` (rad)."""
+    def step(self, yaw, ref, dt, stamp=None, age=0.0, now=None):
+        """Return the angular speed command for the current heading `yaw` and reference `ref` (rad). `stamp` / `age`: see
+        PathTracker.step (timed mode for a slow, late state); `now` is the caller's clock in seconds (observer only)."""
+        w = self._step(yaw, ref, dt, stamp, age, now)
+        if not self._cmd_fed:
+            self._u_sent = w
+        return w
+
+    def _observed_prediction(self, yaw, stamp, age, now, dt):
+        """Heading where the robot will rest, from the model-based observer (use_observer)."""
+        p = self.p
+        if self._obs is None:
+            self._obs = HeadingObserver(tau=p['obs_tau'], gain=p['obs_gain'], latency=p['pose_latency'], k1=p['obs_k1'],
+                                        k2=p['obs_k2'], deadband_w=p['deadband_w'])
+        if now is None:
+            self._clock += dt
+            now = self._clock
+        self._obs.advance(now, self._u_sent)
+        if stamp != self._obs_stamp:                                   # a new sample
+            self._obs_stamp = stamp
+            self._obs.correct(now - max(age, 0.0), yaw)
+            self._obs.advance(now, self._u_sent)
+        return self._obs.predicted_rest(p['lead_w'])
+
+    def _step(self, yaw, ref, dt, stamp, age, now):
         p = self.p
         if self.ref is None or abs(wrap_angle(ref - self.ref)) > 1e-9:
             self.ref = ref
             self._reset()
         pose = (0.0, 0.0, yaw)
-        pred = self._predict(pose, dt)[2]
+        if stamp is None:
+            pred = self._predict(pose, dt)[2]
+        else:
+            pred = self._predict_timed(pose, stamp, age)[2]           # also keeps the rest-test samples
+            if p['use_observer']:
+                pred = self._observed_prediction(yaw, stamp, age, now, dt)
         tol = p['tolerance']
         if p['rest_window'] <= 0.0:                                  # legacy P law (+ optional lead)
             w, err = yaw_p_control(ref, pred, p['kp'], p['max_angular_speed'], p['min_angular_speed'], tol)
@@ -384,6 +436,12 @@ class YawTracker(Compensator):
         if self._fine == 'turn':
             w, err = yaw_p_control(ref, pred, p['kp'], p['max_angular_speed'], p['min_angular_speed'], tol)
             if abs(err) > tol:
+                if p['ki'] > 0.0:                                     # PID form: integrate the error near the target
+                    if abs(err) < 0.35:
+                        self._i = max(-0.5 / p['ki'], min(0.5 / p['ki'], self._i + err * dt))
+                    else:
+                        self._i = 0.0
+                    w = max(-p['max_angular_speed'], min(p['max_angular_speed'], w + p['ki'] * self._i))
                 return self._shape(0.0, w)[1]
             self._fine, self._wait, self._min_wait = 'settle', 0, 0
         if self._fine == 'settle':
@@ -405,5 +463,5 @@ class YawTracker(Compensator):
         if self._pulse_left <= 0:
             self._fine, self._wait = 'settle', 0
             self._min_wait = int(p['settle_time'] / dt)
-            self._hist.clear()
+            self._clear_rest_history()
         return self._shape(0.0, self._pulse_w)[1]

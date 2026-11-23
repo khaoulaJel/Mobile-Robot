@@ -1,0 +1,30 @@
+{
+ "observer": {
+  "diamond_v": 0.3,
+  "diamond_w": 2.5,
+  "deadband_v": 0.04,
+  "deadband_w": 0.2,
+  "kp": 0.9783527592167741,
+  "max_angular_speed": 0.696083716878136,
+  "tolerance": 0.018179530196603223,
+  "lead_w": 0.9853175470528188,
+  "pose_latency": 0.5392264253806732,
+  "vel_span": 1.5995307066548707,
+  "vel_filter": 0.6450358528519411,
+  "rest_window": 1.2601806339017585,
+  "rest_yaw": 0.010973177241695874,
+  "rest_pos": 0.003,
+  "settle_time": 2.395827297726381,
+  "rest_timeout": 4.197267386160507,
+  "pulse_extra": 1,
+  "rest_retries": 7,
+  "obs_tau": 0.6221478234838266,
+  "obs_gain": 0.9288861029147464,
+  "obs_k1": 0.8890156369801893,
+  "obs_k2": 0.15877107288555198,
+  "ki": 0.04409996419930477,
+  "_timed": true,
+  "rest_mean_test": true,
+  "use_observer": true
+ }
+}

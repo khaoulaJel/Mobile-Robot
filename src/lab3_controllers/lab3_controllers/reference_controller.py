@@ -59,6 +59,7 @@ class ReferenceController(Node):
         d('use_initial_yaw_reference', False)  # start with a target heading, no topic message needed
         d('initial_yaw_reference', 0.0)       # that target heading (rad, or degrees with use_degrees); a topic reference overrides it
         d('relative_to_start', False)         # references are relative to the first measured pose
+        d('use_state_stamps', False)          # timed mode: give the controller each sample's time stamp and age (slow, late state)
         d('max_linear_accel', 0.4)            # m/s^2, 0 = off
         d('max_angular_accel', 3.0)           # rad/s^2, 0 = off
         d('rate', 20.0)                       # Hz
@@ -75,12 +76,14 @@ class ReferenceController(Node):
         self.start_delay = float(g('start_delay'))
         self.v_acc, self.w_acc = float(g('max_linear_accel')), float(g('max_angular_accel'))
         self.relative = bool(g('relative_to_start'))
+        self.use_stamps = bool(g('use_state_stamps'))
         self.degrees = bool(g('use_degrees'))
         self.v_cmd = self.w_cmd = 0.0
 
         self.pose = None                      # latest (x, y, yaw)
         self.last_state_time = None
         self.last_state_wall = None
+        self.pose_stamp = 0.0                 # time stamp of the newest sample (header stamp, or arrival time if there is none)
         self.origin = None                    # first pose, for relative references
         self.t_start = None
         self.kind = None                      # None | 'pose' | 'yaw'
@@ -112,6 +115,9 @@ class ReferenceController(Node):
         self.pose = (p.x, p.y, yaw_from_quaternion(q.x, q.y, q.z, q.w))
         self.last_state_time = self.get_clock().now()
         self.last_state_wall = time.monotonic()
+        st = getattr(getattr(self, 'state_input', None), 'stamp', None)
+        stamp = (st.sec + st.nanosec * 1e-9) if st is not None else 0.0
+        self.pose_stamp = stamp if stamp > 0.0 else self.last_state_wall      # only differences of stamps are used
         if self.origin is None:
             self.origin = self.pose
 
@@ -193,6 +199,8 @@ class ReferenceController(Node):
         if age > self.timeout:
             self.get_logger().warn('state is stale, stopping', throttle_duration_sec=2.0)
             self.publish(0.0, 0.0, limit=False)
+            if self.tracker is not None and self.kind == 'yaw' and self.use_stamps:
+                self.tracker.observe_command(0.0)              # the observer must know the robot was told to stop
             return
         if self.kind is None:                 # no reference yet
             self.publish(0.0, 0.0)
@@ -203,16 +211,21 @@ class ReferenceController(Node):
             self.publish(0.0, 0.0)
             return
 
+        now_m = time.monotonic()
+        # timed mode (stamps, observer) is tuned and tested for the HEADING; pose references stay in the classic mode
+        timed = dict(stamp=self.pose_stamp, age=now_m - self.last_state_wall) if (self.use_stamps and self.kind == 'yaw') else {}
         if self.kind == 'pose':
             if self.tracker.mode == DONE:
                 self.publish(0.0, 0.0)
                 return
             v, w = self.tracker.step(self.pose, self.dt)
         else:
-            v, w = 0.0, self.tracker.step(self.pose[2], self.world_reference()[2], self.dt)
+            v, w = 0.0, self.tracker.step(self.pose[2], self.world_reference()[2], self.dt, now=now_m, **timed)
         for event in self.tracker.pop_events():
             self.get_logger().info(event)
         self.publish(v, w)
+        if self.kind == 'yaw' and self.use_stamps:
+            self.tracker.observe_command(self.w_cmd)           # the model needs the command that was really sent
 
     def stop(self):
         try:

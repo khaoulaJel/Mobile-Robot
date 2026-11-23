@@ -12,6 +12,8 @@ Checks (explicit limits, exit code 1 if any fails):
   5  invalid coefficients (k_beta > 0, polar) -> rejected: the robot stays stopped (|v|, |w| = 0 for 2 s)
   6  coefficients repaired                  -> motion resumes and the reference is reached (<= 2 cm)
   7  node restarted with the initial target heading pi/2 (no topic message) -> heading pi/2 within 1 deg
+  8  node in timed + observer mode (sample stamps, model-based prediction): heading reached within 1 deg, and a pose reference
+     still reached within 2 cm (the path controller is unaffected)
 """
 import math
 import os
@@ -186,6 +188,26 @@ def main():
         e_yaw = abs(math.degrees(wrap(math.pi / 2 - probe.pose[2])))
         check('7 initial target heading pi/2 (no message sent)', done and e_yaw <= 1.0,
               f'heading error {e_yaw:.2f} deg (limit 1), settled={done}')
+        os.killpg(procs[-1].pid, signal.SIGTERM)                  # 8: timed mode + observer through the real node wiring
+        procs[-1].wait(timeout=10)
+        procs.append(subprocess.Popen(
+            ['ros2', 'run', 'lab3_controllers', 'reference_controller', '--ros-args', '-r', f'__node:={NODE}',
+             '-p', 'state_topic:=/odom', '-p', 'cmd_topic:=/diff_cont/cmd_vel_unstamped', '-p', 'start_delay:=1.0',
+             '-p', 'relative_to_start:=false', '-p', 'max_linear_speed:=0.2', '-p', 'max_angular_speed:=1.0',
+             '-p', 'pos_tolerance:=0.01', '-p', 'yaw_tolerance:=0.01', '-p', 'tolerance:=0.005', '-p', 'kp:=1.0',
+             '-p', 'use_state_stamps:=true', '-p', 'use_observer:=true', '-p', 'obs_tau:=0.15', '-p', 'lead_w:=0.15',
+             '-p', 'obs_k1:=0.5', '-p', 'obs_k2:=0.2', '-p', 'pose_latency:=0.0', '-p', 'vel_span:=0.6'],
+            stdout=log, stderr=subprocess.STDOUT, start_new_session=True))
+        probe.spin(2.0)
+        probe.send_yaw(-math.pi / 3)
+        done_a = probe.settle(60)
+        e_yaw = abs(math.degrees(wrap(-math.pi / 3 - probe.pose[2])))
+        probe.send_pose(0.10, -0.20, 0.0)
+        done_b = probe.settle(80)
+        x, y, th = probe.pose
+        e_pos = math.hypot(0.10 - x, -0.20 - y)
+        check('8 timed + observer mode through the node', done_a and done_b and e_yaw <= 1.0 and e_pos <= 0.02,
+              f'heading error {e_yaw:.2f} deg (limit 1), then pose reference position error {e_pos * 100:.2f} cm (limit 2)')
     finally:
         probe.destroy_node()
         rclpy.shutdown()
@@ -196,7 +218,7 @@ def main():
                 pass
         log.close()
     print(f'passed: {sum(results)}   failed: {len(results) - sum(results)}')
-    return 0 if all(results) and len(results) == 7 else 1
+    return 0 if all(results) and len(results) == 8 else 1
 
 
 if __name__ == '__main__':

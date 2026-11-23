@@ -1,0 +1,42 @@
+{
+ "classic": {
+  "diamond_v": 0.3,
+  "diamond_w": 2.5,
+  "deadband_v": 0.04,
+  "deadband_w": 0.2,
+  "kp": 0.8571480870412673,
+  "max_angular_speed": 0.750440954037632,
+  "tolerance": 0.018926603678369604,
+  "lead_w": 0.8927127676853585,
+  "vel_filter": 0.603211817623871,
+  "rest_window": 1.438241334875414,
+  "rest_yaw": 0.010892738044864788,
+  "settle_time": 2.0966797187783586,
+  "rest_timeout": 4.9382841470077565,
+  "pulse_extra": 2,
+  "rest_retries": 8,
+  "vel_window": 5
+ },
+ "timed": {
+  "diamond_v": 0.3,
+  "diamond_w": 2.5,
+  "deadband_v": 0.04,
+  "deadband_w": 0.2,
+  "kp": 0.650356355580373,
+  "max_angular_speed": 0.7346166845261421,
+  "tolerance": 0.022788433781453076,
+  "lead_w": 0.977207349389666,
+  "pose_latency": 0.0,
+  "vel_span": 0.6308522158640055,
+  "vel_filter": 0.8878850610667577,
+  "rest_window": 1.9999918839772495,
+  "rest_yaw": 0.03316380169117602,
+  "rest_pos": 0.003,
+  "settle_time": 3.7831999509707406,
+  "rest_timeout": 4.01831315261936,
+  "pulse_extra": 1,
+  "rest_retries": 8,
+  "_timed": true,
+  "rest_mean_test": true
+ }
+}

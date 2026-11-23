@@ -1,0 +1,74 @@
+# Reference controller for the PROFESSOR'S ROBOT, TUNED for the heading under the real conditions of the exam setup:
+# the state is the SLAM map pose (/robot_pose): slow (3-25 Hz), late (0.05-0.6 s), noisy (up to 1.5 deg) and it FREEZES for a few
+# seconds every ~35 s. The heading is controlled with a model-based observer (it simulates the robot from the commands we sent
+# and uses the late pose only to correct the simulation), a PID form (integral term for the last degrees) and the robot's
+# deadband / lag. Found by random search + refinement in tools/tune_heading_real.py on the simulator of tools/yaw_real_sim.py
+# (identified robot model of the professor behind the pose source above), validated on 160 cases the search never saw:
+#
+#                              normal conditions                          STRESS (slow source, long freezes, +-20 % robot gain, SLAM jumps)
+#   plain P law                4.7 deg mean error, 12 % within 1 deg      8.1 deg, 4 % within 1 deg
+#   preset used in the run     0.47 deg, 92 % within 1 deg, overshoot 3.2 0.84 deg, 69 % within 1 deg, overshoot 12.5 deg
+#   THIS FILE                  0.31 deg, 100 % within 1 deg, overshoot 0.03 0.51 deg, 90 % within 1 deg, overshoot 3.0 deg, worst 2.95 deg
+#
+# SIMULATION RESULT: the robot model is the professor's Simulink model, not a measurement of the real robot. Re-measure
+# (tools/measure_response.py) and re-tune (tools/tune_heading_real.py) when the real numbers are known. Path tracking
+# (pose references) is NOT tuned here and runs in the classic mode; it shares the compensation names (lead_w, vel_filter,
+# rest_*) with the heading, so those few shared numbers now take the heading-tuned values: re-check a path with this file
+# before relying on it, or use reference_lab_robot.yaml for paths.
+#
+#   ros2 launch lab3_controllers reference.launch.py config:=reference_lab_robot_tuned.yaml \
+#        cmd_topic:=/diff_cont/cmd_vel_unstamped state_topic:=/robot_pose
+#   ros2 topic pub --once /reference_yaw std_msgs/msg/Float64 "{data: 1.5708}"          # target pi/2
+reference_controller:
+  ros__parameters:
+    state_topic: /robot_pose
+    cmd_topic: /diff_cont/cmd_vel_unstamped
+    reference_topic: /reference
+    reference_yaw_topic: /reference_yaw
+    use_degrees: false
+    relative_to_start: false              # absolute headings in the map frame (the professor's frame)
+    use_initial_yaw_reference: false
+    use_state_stamps: true                # timed mode: the controller gets each sample's time stamp and age
+    start_delay: 1.0
+    max_linear_accel: 0.4
+    max_angular_accel: 1.5
+
+    # --- pose reference (go to x, y, then align the heading): unchanged, not tuned for the map pose ---
+    strategy: stop_turn
+    kv: 0.8
+    kw: 2.2
+    k_yaw: 0.8
+    turn_in_place_deg: 15.0
+    max_linear_speed: 0.1
+    pos_tolerance: 0.01
+    yaw_tolerance: 0.01
+    smooth_yaw_tolerance: 0.21
+    lead_v: 0.3
+
+    # --- heading: the tuned set ---
+    kp: 0.9784                            # 1/s    proportional gain
+    ki: 0.0441                            # 1/s^2  integral gain (PID form)
+    max_angular_speed: 0.6961             # rad/s
+    tolerance: 0.0182                     # rad (1.0 deg)
+    use_observer: true                    # model-based prediction of the present heading
+    obs_tau: 0.6221                       # s      robot turn-rate lag in the model
+    obs_gain: 0.9289                      #        robot turn-rate gain in the model
+    obs_k1: 0.889                         #        how much of a new sample's heading difference corrects the model
+    obs_k2: 0.1588                        # 1/s    ... and the model's turn rate
+    pose_latency: 0.5392                  # s      delay of the pose (the sample describes the heading this long ago)
+    lead_w: 0.9853                        # s      predict where the heading will rest: heading + turn rate * lead_w
+    vel_span: 1.5995                      # s      speed estimate = slope over this window (used for the rest test and as a fallback)
+    vel_filter: 0.645
+    rest_window: 1.2602                   # s      wait for rest, then check the true error
+    rest_yaw: 0.011                       # rad    "at rest" threshold (window averages, rest_mean_test)
+    rest_mean_test: true
+    rest_timeout: 4.1973                  # s
+    settle_time: 2.3958                   # s      wait after a correction pulse
+    rest_retries: 7                       #        correction pulses per target
+    pulse_extra: 1
+
+    # --- the robot's command filter (professor's model) ---
+    diamond_v: 0.3
+    diamond_w: 2.5
+    deadband_v: 0.04
+    deadband_w: 0.2

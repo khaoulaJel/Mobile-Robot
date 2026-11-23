@@ -60,6 +60,21 @@ ros2 topic pub --once /reference_yaw std_msgs/msg/Float64 "{data: 0.7854}"
 Invalid coefficients (for example `k_beta > 0` with the polar strategy) are rejected with an error and the robot stays stopped until they are repaired.
 Test: `tools/check_reference.py` (simulated robot, six strict checks, also part of `tools/run_all.sh`).
 
+## Slow, late, freezing state: timed mode, observer and PID (heading)
+
+The map pose `/robot_pose` arrives slowly, late, noisy and with freezes. For that case the heading controller has an opt-in layer (all off by default; with it off the
+controller is identical to before). Full explanation, parameters of the run, simulation conditions and results: `results/real_robot/tuning_report.md`.
+
+| Part | Parameters | What it does |
+| --- | --- | --- |
+| timed mode | `use_state_stamps` (node), `pose_latency`, `vel_span`, `rest_mean_test` | the controller gets each sample's time stamp and age; speed is a least-squares slope of the NEW samples; estimates are cleared after a gap; "at rest" is judged by window averages |
+| observer (`observer.py`) | `use_observer`, `obs_tau`, `obs_gain`, `obs_k1`, `obs_k2` | simulates the robot (deadband, lag, gain) from the commands really sent, corrected by the late pose; keeps running through a freeze |
+| PID form | `ki` | integral term near the target with anti-windup |
+
+`config/reference_lab_robot_tuned.yaml` is the tuned set (`tools/tune_heading_real.py` on `tools/yaw_real_sim.py`, validated on cases the search never saw): on the
+professor's robot model 0.31 deg mean error and 100 % within 1 deg in normal conditions, 0.51 deg and 90 % under stress (slow source, long freezes, +-20 % robot gain),
+against 4.7 / 8.1 deg for the plain P law and 0.47 / 0.84 deg for the earlier preset. Simulation only; re-measure and re-tune on the real robot.
+
 ## Compensation for a robot that drops small commands and responds slowly
 
 Code: `lab3_controllers/compensation.py`. All off by default (Gazebo behaviour is unchanged); enabled by `config/lab_robot.yaml` and `config/hardware.yaml`.
@@ -86,7 +101,8 @@ Typical coasting times and the deadband of a given robot are measured with `tool
 | `calibrate_odometry.py`, `check_state_source.py`, `trial_stats.py` | odometry calibration, state-topic inspection, repeatability statistics |
 | `lab_robot_relay.py`, `lab_robot_gazebo_check.py` | put the command filter and identified plant in front of Gazebo to test the nodes against a deadband/slow robot |
 | `simulink_replay/` | replay a command stream through the Simulink filter and state-space blocks and compare with the Python model (MATLAB) |
-| `check_reference.py` | strict test of the reference controller against a simulated robot |
+| `check_reference.py` | strict test of the reference controller against a simulated robot (8 checks) |
+| `yaw_real_sim.py`, `tune_heading_real.py`, `effective_params.py` | heading under the real pose-source conditions; coefficient search with unseen validation cases; the full parameter set of a run |
 | `robot_session.sh` | robot-day helper: `check`, `measure`, `reference`, `send-pose`, `send-yaw`, `set`, `stop` |
 | `generate_symbolic.py`, `symbolic_sim.py` | build the symbolic model and controller; closed-loop simulation of it |
 | `preview_lqr.py`, `tune_preview.py`, `lqr_compare.py` | experimental preview LQR (linear MPC) with the identified plant: better on smooth curves, sensitive to unmodelled delay; not used by the nodes |

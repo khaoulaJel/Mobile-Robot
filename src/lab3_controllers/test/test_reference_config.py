@@ -12,11 +12,11 @@ from lab3_controllers.tracker import DEFAULTS, YAW_DEFAULTS  # noqa: E402
 CONFIG = os.path.join(os.path.dirname(__file__), '..', 'config')
 NODE_PARAMS = {'state_topic', 'state_type', 'state_wait_timeout', 'state_jump_warn', 'cmd_topic', 'reference_topic',
                'reference_yaw_topic', 'use_degrees', 'use_initial_yaw_reference', 'initial_yaw_reference',
-               'relative_to_start', 'max_linear_accel', 'max_angular_accel', 'rate', 'state_timeout', 'start_delay'}
+               'relative_to_start', 'use_state_stamps', 'max_linear_accel', 'max_angular_accel', 'rate', 'state_timeout', 'start_delay'}
 ALLOWED = NODE_PARAMS | set(DEFAULTS) | set(YAW_DEFAULTS)
 
 
-@pytest.mark.parametrize('name', ['reference_controller.yaml', 'reference_lab_robot.yaml'])
+@pytest.mark.parametrize('name', ['reference_controller.yaml', 'reference_lab_robot.yaml', 'reference_lab_robot_tuned.yaml'])
 def test_every_key_is_a_declared_parameter(name):
     with open(os.path.join(CONFIG, name), encoding='utf-8') as f:
         params = yaml.safe_load(f)['reference_controller']['ros__parameters']
