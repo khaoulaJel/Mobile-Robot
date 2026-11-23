@@ -3,6 +3,19 @@
 Setup that was made to work on 2026-11-23 (Windows 11 laptop with WSL2 Ubuntu 22.04, Raspberry Pi with Ubuntu 22.04, ROS 2 Humble,
 CycloneDDS, both on the same Wi-Fi/LAN). Replace the IP addresses with your own (`hostname -I` on the Pi, `ipconfig` on Windows).
 
+## 0. Your own ROS domain (do this first, every time)
+
+All robots on the same Wi-Fi that use the same `ROS_DOMAIN_ID` (the default is 0) see each other's topics: their odometry mixes with yours and your commands can
+move **their** robot. Symptoms: two nodes with the same name (`diff_cont`, `controller_manager`), odometry that keeps arriving while your Pi is unreachable, a map or
+scan from a lidar you did not connect. Pick a number from 1 to 100 that no other group uses and set the **same number on the Pi and the laptop**, in every terminal:
+
+```bash
+export ROS_DOMAIN_ID=<your number>
+```
+
+Check before moving anything: `ros2 topic info /diff_cont/odom` must show `Publisher count: 1`, and `ros2 node list | sort | uniq -d` must print nothing.
+`tools/robot_session.sh` refuses to run on domain 0 and checks this.
+
 ## 1. WSL must share the LAN address (once)
 
 WSL2 defaults to NAT: the Pi cannot reach it. Create `C:\Users\<you>\.wslconfig`:
@@ -54,7 +67,7 @@ Laptop `~/cdds.xml` (Pi at 192.168.0.112, laptop at 192.168.0.110; use your own 
 The Pi's `~/cdds.xml` is the same with the interface address and the two peers swapped. Do not switch multicast fully off: the Pi's own processes (controller manager, spawner) then cannot find each other and `joint_broad` fails to configure, and new processes on the laptop (tests, `ros2 topic pub`) take several seconds to connect, so short command bursts are lost. In every terminal on both machines:
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=0 ROS_LOCALHOST_ONLY=0
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=<your number> ROS_LOCALHOST_ONLY=0
 export CYCLONEDDS_URI=file://$HOME/cdds.xml
 ```
 

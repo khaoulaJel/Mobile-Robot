@@ -13,16 +13,26 @@
 #   COEFFS=/path/file.yaml   the coefficients you were given (default: config/reference_controller.yaml)
 #   CDDS=~/cdds.xml          CycloneDDS peer file
 # The robot stack (Pi: hardware.launch.py, laptop: run_desktop.sh) must already be running.
-set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source /opt/ros/humble/setup.bash
 [ -f "$HERE/../../../install/setup.bash" ] && source "$HERE/../../../install/setup.bash"
-export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}" RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_LOCALHOST_ONLY=0
+set -u        # after the ROS setup files, which use unset variables
+# YOUR OWN ROS domain, the same number on the Pi and the laptop. Domain 0 is shared with every other robot on the Wi-Fi:
+# their topics mix with yours and you can command their robot. Pick a number from 1 to 100 that no other group uses.
+if [ -z "${ROS_DOMAIN_ID:-}" ] || [ "$ROS_DOMAIN_ID" = "0" ]; then
+  echo "Set your own ROS domain first (not 0, not used by another group):  export ROS_DOMAIN_ID=<1..100>   (same on the Pi)" >&2
+  exit 1
+fi
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_LOCALHOST_ONLY=0
 [ -f "${CDDS:-$HOME/cdds.xml}" ] && export CYCLONEDDS_URI="file://${CDDS:-$HOME/cdds.xml}"
 COEFFS="${COEFFS:-reference_controller.yaml}"
 
 case "${1:-help}" in
   check)
+    echo "== ROS domain $ROS_DOMAIN_ID: exactly ONE robot must be visible (publishers of /diff_cont/odom = 1, no duplicate nodes)"
+    n=$(ros2 topic info /diff_cont/odom 2>/dev/null | awk '/Publisher count/ {print $3}')
+    echo "publishers of /diff_cont/odom: ${n:-0}"
+    [ "${n:-0}" = "1" ] || echo "WARNING: not exactly one robot on this domain. Another robot shares it: choose another ROS_DOMAIN_ID on BOTH machines."
     echo "== odometry from the robot (expect 25-40 Hz, longest gap < 0.3 s)"
     timeout 12 ros2 topic hz /diff_cont/odom 2>&1 | tail -2
     echo "== duplicate node names (expect nothing)"; ros2 node list 2>/dev/null | sort | uniq -d

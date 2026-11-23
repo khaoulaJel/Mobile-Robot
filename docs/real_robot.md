@@ -17,7 +17,7 @@ run on hardware yet.
 Already done in simulation: all code, tests and configs. What needs the robot: the real numbers and the first motion.
 
 ```bash
-# 0. hardware: motor battery connected and switched on (the driver needs it; the Arduino alone is powered by USB),
+# 0. your own ROS_DOMAIN_ID on the Pi and the laptop (not 0; docs/network_setup.md section 0), then hardware: motor battery connected and switched on (the driver needs it; the Arduino alone is powered by USB),
 #    USB cable Pi <-> Arduino secured, robot on the floor with 1.5 m x 1.5 m free, joystick in hand (it overrides everything)
 # 1. start the robot side (docs/network_setup.md):  Pi      ros2 launch articubot_one hardware.launch.py lidar:=false
 #                                                   laptop  ./run_desktop.sh
