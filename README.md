@@ -84,7 +84,7 @@ Laptop         this repo    OUR controllers (publish /cmd_vel_tracker)          
 
 Both machines: same LAN, `ROS_DOMAIN_ID=0`, `ROS_LOCALHOST_ONLY=0`, `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`, synchronised clocks (see `laptop_ws/START_HERE.md`).
 Pi build: copy `pi_ws/` to the Pi and run `colcon build --symlink-install` there. The joystick keeps priority over our controllers in `twist_mux`.
-Commissioning order (measure, first motion, tests): `docs/real_robot.md`.
+Network, firewall, CycloneDDS peers and start order that worked on the real setup: `docs/network_setup.md`. Commissioning order (measure, first motion, tests): `docs/real_robot.md`.
 
 ## Tests
 
@@ -119,4 +119,5 @@ Details: `results/lab_robot_results.md`, `results/symbolic/summary.md`.
 
 - `docs/controllers.md`: control laws, strategies, parameters, tools.
 - `docs/symbolic_control.md`: the symbolic model, the transition table, synthesis, results.
+- `docs/network_setup.md`: Pi + laptop (WSL) network, firewall, DDS config, start order.
 - `docs/real_robot.md`: real-robot interface and commissioning procedure.
