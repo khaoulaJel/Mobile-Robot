@@ -2,7 +2,7 @@
 #
 #   reference (pose)   ros2 topic pub --once /reference geometry_msgs/msg/PoseStamped \
 #                         "{pose: {position: {x: 0.5, y: 0.0}, orientation: {z: 0.0, w: 1.0}}}"
-#   reference (yaw)    ros2 topic pub --once /reference_yaw std_msgs/msg/Float64 "{data: 0.7854}"      # rad (45 deg)
+#   reference (yaw)    ros2 topic pub --once /reference_yaw std_msgs/msg/Float64 "{data: 1.5708}"      # rad: the target pi/2 (90 deg)
 #   change a number    ros2 param set /reference_controller kv 0.6        (the controller restarts from the present pose)
 #
 # THE COEFFICIENTS: the values below are the project's defaults, tuned in simulation. When you are given the numbers for
@@ -16,8 +16,8 @@ reference_controller:
     reference_yaw_topic: /reference_yaw
     use_degrees: false            # unit of the /reference_yaw number and of initial_yaw_reference
     relative_to_start: false      # false: references are absolute headings/positions in the state frame (odom); true: relative to the first pose
-    use_initial_yaw_reference: true   # the professor's target: hold heading pi/2 from the start (a /reference or /reference_yaw message overrides it)
-    initial_yaw_reference: 1.5708     # rad (pi/2)
+    use_initial_yaw_reference: false  # false: start idle at the robot's present heading and wait for a reference. true: start by turning to initial_yaw_reference
+    initial_yaw_reference: 1.5708     # rad (pi/2), only used when use_initial_yaw_reference is true
     start_delay: 3.0              # s
     max_linear_accel: 0.4         # m/s^2
     max_angular_accel: 1.5        # rad/s^2
