@@ -6,14 +6,30 @@ all call `PathTracker.step()`, so what is tuned in the model is exactly what run
 The tracker works in the world (odom) frame: the caller transforms a start-relative path first and calls
 `start(pose)` once. `step(pose)` returns the raw (v, w) command; the caller applies acceleration limits
 (`slew`) and publishes.
+
+HOW IT WORKS (a small state machine, one point of the path at a time)
+
+    GO     drive towards path point i with the chosen strategy
+             stop_turn     turn towards the point, drive, slow down       (law: go_to_point_control)
+             polar         one smooth motion that also reaches the heading (law: pose_control)
+             pure_pursuit  chase a look-ahead point along the whole path   (law: pure_pursuit_control)
+       |  position reached
+       v
+    ALIGN  rotate in place to the heading of point i (P law on the yaw error)
+       |  heading reached -> next point (GO), or DONE after the last point
+       v
+    DONE   command 0
+
+Slow-plant compensation (lead prediction, rest check, corrective pulses, command shaping) lives in
+`compensation.py` and is off unless the parameters are set.
 """
 
 import math
-from collections import deque
 
 from lab3_controllers.common import (
     go_to_point_control, lookahead_point, pose_control, project_on_path,
     pure_pursuit_control, wrap_angle, yaw_p_control)
+from lab3_controllers.compensation import Compensator
 
 GO, ALIGN, DONE = 'GO', 'ALIGN', 'DONE'
 STRATEGIES = ('stop_turn', 'polar', 'pure_pursuit')
@@ -39,7 +55,7 @@ DEFAULTS = dict(
     min_angular_speed=0.0,           # rad/s
     pos_tolerance=0.01,              # m
     yaw_tolerance=0.01,              # rad
-    # --- slow-plant compensation (all off by default; see tools/plant_models.py) ---
+    # --- slow-plant compensation (all off by default; see compensation.py and tools/plant_models.py) ---
     lead_v=0.0,                      # s  predict the rest position: pos + v_meas * lead_v (plant lag)
     lead_w=0.0,                      # s  predict the rest heading: yaw + w_meas * lead_w
     vel_filter=0.3,                  # 0..1 low-pass gain of the velocity estimate (finite differences)
@@ -69,87 +85,8 @@ DEFAULTS = dict(
     deadband_w=0.0,                  # rad/s ... |w| <= deadband_w                            (lab: 0.2)
 )
 
-DIAMOND_MARGIN = 0.97                # stay inside the diamond with some margin
-DEADBAND_MARGIN = 1.10               # leave the deadband by 10 % (lift to 1.1 * threshold)
 
-
-class _Compensator:
-    """Shared by PathTracker and YawTracker: velocity estimate + lead prediction of the rest pose,
-    at-rest detection, and shaping of commands for the robot's input filter."""
-
-    def __init__(self, p):
-        self.p = p
-        self.v_est = self.w_est = 0.0
-        self._hist = deque()         # recent poses, for the at-rest test
-        self._vhist = deque()        # recent poses, for the velocity estimate
-
-    # ---- plant-lag prediction and robot command filter -------------------------------------
-    def _predict(self, pose, dt):
-        """Pose the robot will come to rest at if we stopped commanding now (lead compensation):
-        pose + measured velocity * coasting time. The velocity is a low-passed finite difference."""
-        x, y, yaw = pose
-        p = self.p
-        n = max(1, int(p['vel_window']))
-        if dt > 0.0 and self._vhist:
-            k = min(n, len(self._vhist))
-            px, py, pyaw = self._vhist[-k]
-            vi = ((x - px) * math.cos(yaw) + (y - py) * math.sin(yaw)) / (k * dt)
-            wi = wrap_angle(yaw - pyaw) / (k * dt)
-            a = p['vel_filter']
-            self.v_est += a * (vi - self.v_est)
-            self.w_est += a * (wi - self.w_est)
-        self._vhist.append(pose)
-        while len(self._vhist) > n:
-            self._vhist.popleft()
-        if p['rest_window'] > 0.0 and dt > 0.0:
-            self._hist.append(pose)
-            while len(self._hist) > int(p['rest_window'] / dt) + 1:
-                self._hist.popleft()
-        if p['lead_v'] == 0.0 and p['lead_w'] == 0.0:
-            return pose
-        return (x + self.v_est * p['lead_v'] * math.cos(yaw),
-                y + self.v_est * p['lead_v'] * math.sin(yaw),
-                wrap_angle(yaw + self.w_est * p['lead_w']))
-
-    def _mean_pose(self, pose, n=10):
-        """Average of the last n poses (noise reduction when the robot is at rest)."""
-        h = list(self._hist)[-n:] or [pose]
-        return (sum(q[0] for q in h) / len(h), sum(q[1] for q in h) / len(h),
-                math.atan2(sum(math.sin(q[2]) for q in h), sum(math.cos(q[2]) for q in h)))
-
-    def _at_rest(self, dt):
-        """True when the pose has hardly moved over the last rest_window seconds."""
-        p = self.p
-        n = int(p['rest_window'] / dt) + 1
-        if len(self._hist) < n:
-            return False
-        x1, y1, th1 = self._hist[-1]
-        return all(math.hypot(x1 - x0, y1 - y0) <= p['rest_pos'] and
-                   abs(wrap_angle(th1 - th0)) <= p['rest_yaw'] for x0, y0, th0 in self._hist)
-
-    def _shape(self, v, w):
-        """Keep the command out of the robot's deadband and inside its feasible set, so the robot's
-        input filter never drops it. Both steps scale (v, w) together, i.e. keep the curvature."""
-        p = self.p
-        dv, dw = p['deadband_v'], p['deadband_w']
-        if (v != 0.0 or w != 0.0) and dv > 0.0 and dw > 0.0 and abs(v) <= dv and abs(w) <= dw:
-            # smallest scale factor that leaves the deadband rectangle along either axis
-            factors = []
-            if v != 0.0:
-                factors.append(dv * DEADBAND_MARGIN / abs(v))
-            if w != 0.0:
-                factors.append(dw * DEADBAND_MARGIN / abs(w))
-            f = min(factors)
-            v, w = v * f, w * f
-        if p['diamond_v'] > 0.0 and p['diamond_w'] > 0.0:
-            s = abs(v) / p['diamond_v'] + abs(w) / p['diamond_w']
-            if s > DIAMOND_MARGIN:
-                f = DIAMOND_MARGIN / s
-                v, w = v * f, w * f
-        return v, w
-
-
-class PathTracker(_Compensator):
+class PathTracker(Compensator):
     def __init__(self, path, params=None):
         p = dict(DEFAULTS)
         p.update(params or {})
@@ -163,20 +100,22 @@ class PathTracker(_Compensator):
         self.strategy = p['strategy']
         self.turn_in_place = math.radians(float(p['turn_in_place_deg']))
         self.path = [tuple(map(float, pt)) for pt in path]     # world-frame (x, y, theta)
-        self.polyline = []
-        self.idx = 0
-        self.seg = 0
-        self.mode = GO
+        self.polyline = []           # pure pursuit: start position, then the path points
+        self.idx = 0                 # index of the current path point
+        self.seg = 0                 # pure pursuit: current polyline segment
+        self.mode = GO               # GO | ALIGN | DONE
         self.events = []             # human-readable messages for the caller to log
+        # state of the "verify at rest" alignment (only used when rest_window > 0)
+        self._fine = 'turn'          # turn (P law) -> settle (wait for rest) -> pulse -> settle ...
         self._wait = 0               # steps spent waiting for the robot to settle
-        self._retries = 0
-        self._pos_retries = 0
-        self._fine = 'turn'          # heading alignment: turn (P law) -> settle -> pulse -> settle ...
-        self._pulse_left = 0
-        self._pulse_w = 0.0
-        self._min_wait = 0
-        self.gx, self.gy, self.gth = self.path[0]
+        self._min_wait = 0           # steps to wait at least (after a pulse)
+        self._retries = 0            # heading pulses used at this point
+        self._pos_retries = 0        # position re-approaches used at this point
+        self._pulse_left = 0         # samples left in the running pulse
+        self._pulse_w = 0.0          # signed size of the running pulse
+        self.gx, self.gy, self.gth = self.path[0]    # goal of the last step (for logging)
 
+    # ---- small public helpers --------------------------------------------------------------
     def set_path(self, path):
         """Replace the (world-frame) path, e.g. after transforming a start-relative path."""
         self.path = [tuple(map(float, pt)) for pt in path]
@@ -190,6 +129,118 @@ class PathTracker(_Compensator):
         ev, self.events = self.events, []
         return ev
 
+    # ======================================================================================
+    # ONE CONTROL STEP
+    # ======================================================================================
+    def step(self, pose, dt=0.05):
+        """Return the (v, w) command for the measured pose (x, y, yaw)."""
+        if self.mode == DONE:
+            return 0.0, 0.0
+        # With compensation on, control the pose the robot WILL rest at; otherwise this is the pose itself.
+        x, y, yaw = self._predict(pose, dt)
+
+        v = w = 0.0
+        if self.mode == GO:
+            v, w = self._step_go(x, y, yaw)
+
+        if self.mode == ALIGN:             # also true in the same step the position was reached
+            gx, gy, gth = self._goal()
+            self.gx, self.gy, self.gth = gx, gy, gth
+            if self._fine_align_applies():
+                v, w = self._align_fine(pose, (x, y, yaw), gx, gy, gth, dt)
+            else:
+                v, w = self._align_simple(x, y, yaw, gth)
+            return self._shape(v, w)
+
+        self.gx, self.gy, self.gth = self._goal()
+        return self._shape(v, w)
+
+    def _goal(self):
+        """Goal of the current step: pure pursuit always aims at the end of the path."""
+        return self.path[-1] if self.strategy == 'pure_pursuit' else self.path[self.idx]
+
+    # ======================================================================================
+    # GO: drive towards the point (one method per strategy; each returns v, w, dist, arrived)
+    # ======================================================================================
+    def _step_go(self, x, y, yaw):
+        p = self.p
+        if self.strategy == 'stop_turn':
+            v, w, dist, arrived = self._go_stop_turn(x, y, yaw)
+        elif self.strategy == 'polar':
+            v, w, dist, arrived = self._go_polar(x, y, yaw)
+        else:
+            v, w, dist, arrived = self._go_pure_pursuit(x, y, yaw)
+
+        if arrived:                                        # stop and align the heading
+            self.mode = ALIGN
+            self.events.append(f'point {self.idx + 1}/{len(self.path)} position reached '
+                               f'(err {dist * 100:.1f} cm), aligning')
+            return 0.0, 0.0
+        # deadband compensation: never command a non-zero speed below the minimum
+        if 0.0 < v < p['min_linear_speed']:
+            v = p['min_linear_speed']
+        if v == 0.0 and 0.0 < abs(w) < p['min_angular_speed']:
+            w = math.copysign(p['min_angular_speed'], w)
+        return v, w
+
+    def _go_stop_turn(self, x, y, yaw):
+        """Turn towards the point (in place if the bearing error is large), drive, slow down."""
+        p = self.p
+        gx, gy, _ = self.path[self.idx]
+        v, w, dist, _ = go_to_point_control(x, y, yaw, gx, gy, p['kv'], p['kw'],
+                                            p['max_linear_speed'], p['max_angular_speed'], self.turn_in_place)
+        return v, w, dist, dist <= p['pos_tolerance']
+
+    def _go_polar(self, x, y, yaw):
+        """Polar-coordinate law towards position AND heading. Intermediate points are not stopped at:
+        within blend_radius the tracker hands over to the next point at once."""
+        p = self.p
+        while True:
+            gx, gy, gth = self.path[self.idx]
+            last = self.idx == len(self.path) - 1
+            v, w, dist, _ = pose_control(x, y, yaw, gx, gy, gth, p['k_rho'], p['k_alpha'], p['k_beta'],
+                                         p['max_linear_speed'], p['max_angular_speed'],
+                                         p['decel'] if last else 0.0)
+            if last:
+                return v, w, dist, dist <= p['pos_tolerance']
+            if dist > p['blend_radius']:
+                return v, w, dist, False
+            self.events.append(f'point {self.idx + 1}/{len(self.path)} passed '
+                               f'(pos=({x:.3f},{y:.3f}), {dist * 100:.1f} cm off)')
+            self.idx += 1                                  # hand over and recompute for the next point
+
+    def _go_pure_pursuit(self, x, y, yaw):
+        """Chase a look-ahead point on the path; slow down towards the end."""
+        p = self.p
+        self.seg, t = project_on_path(self.polyline, x, y, self.seg)
+        lx, ly, rem = lookahead_point(self.polyline, self.seg, t, p['lookahead'])
+        # path length left, but never less than the straight-line distance to the end:
+        # after an overshoot the projection is clamped to the end and rem would be 0
+        # (speed cap 0 = deadlock)
+        rem = max(rem, math.hypot(self.polyline[-1][0] - x, self.polyline[-1][1] - y))
+        v, w, _ = pure_pursuit_control(x, y, yaw, (lx, ly), p['max_linear_speed'], p['max_angular_speed'],
+                                       p['lookahead'], rem, p['decel'])
+        self.idx = min(self.seg, len(self.path) - 1)       # progress, for the log
+        gx, gy, _ = self.path[-1]
+        dist = math.hypot(gx - x, gy - y)
+        return v, w, dist, self.seg >= len(self.polyline) - 2 and dist <= p['pos_tolerance']
+
+    # ======================================================================================
+    # ALIGN: rotate in place to the heading of the point
+    # ======================================================================================
+    def _align_simple(self, x, y, yaw, gth):
+        """P law on the yaw error; the point is finished when the error is inside the tolerance."""
+        p = self.p
+        tol = p['yaw_tolerance']
+        if (p['smooth_yaw_tolerance'] > tol and self.strategy != 'pure_pursuit' and
+                self._turn_at(self.idx) <= p['rest_corner_deg']):
+            tol = p['smooth_yaw_tolerance']              # smooth curve point: no need to align exactly
+        w, err = yaw_p_control(gth, yaw, p['k_yaw'], p['max_angular_speed'], p['min_angular_speed'], tol)
+        if abs(err) <= tol:
+            self._finish_point(x, y, yaw, err)
+            w = 0.0
+        return 0.0, w
+
     def _turn_at(self, i):
         """How much the path turns at point i (degrees); the last point counts as a full stop."""
         if i >= len(self.path) - 1 or i + 1 >= len(self.polyline):
@@ -201,11 +252,13 @@ class PathTracker(_Compensator):
         return abs(math.degrees(wrap_angle(h2 - h1)))
 
     def _fine_align_applies(self):
+        """Verify-at-rest alignment is used at corners and at the last point, when it is enabled."""
         p = self.p
         return (p['rest_window'] > 0.0 and self.strategy != 'pure_pursuit' and
                 self._turn_at(self.idx) > p['rest_corner_deg'])
 
     def _finish_point(self, x, y, yaw, err):
+        """Point done: log it and move on (GO to the next point, or DONE)."""
         self.events.append(
             f'point {self.idx + 1}/{len(self.path)} done '
             f'(pos=({x:.3f},{y:.3f}) yaw={math.degrees(yaw):.1f} deg, '
@@ -227,7 +280,6 @@ class PathTracker(_Compensator):
         settle: command 0 until the robot has really stopped (or rest_timeout), then check the TRUE error
         pulse : n samples of +-pulse_w, n = error / (pulse_w * dt); back to settle."""
         p = self.p
-        ax, ay, ath = pose
         if self._fine == 'turn':
             w, err = yaw_p_control(gth, pred[2], p['k_yaw'], p['max_angular_speed'],
                                    p['min_angular_speed'], p['yaw_tolerance'])
@@ -238,9 +290,9 @@ class PathTracker(_Compensator):
             self._wait += 1
             if self._wait <= self._min_wait or (
                     not self._at_rest(dt) and self._wait <= int(p['rest_timeout'] / dt) + self._min_wait):
-                return 0.0, 0.0
-            ax, ay, ath = self._mean_pose(pose)            # noise-averaged pose of the settled robot
-            e = wrap_angle(gth - ath)                      # true heading error, robot at rest
+                return 0.0, 0.0                                # still moving: keep waiting
+            ax, ay, ath = self._mean_pose(pose)                # noise-averaged pose of the settled robot
+            e = wrap_angle(gth - ath)                          # true heading error, robot at rest
             off = math.hypot(gx - ax, gy - ay)
             heading_ok = abs(e) <= p['yaw_tolerance'] or self._retries >= p['rest_retries']
             if heading_ok:
@@ -255,8 +307,9 @@ class PathTracker(_Compensator):
                     return 0.0, 0.0
                 self._finish_point(ax, ay, ath, e)
                 return 0.0, 0.0
+            # heading still off: start a corrective pulse of exactly the right length
             self._retries += 1
-            wp = p['pulse_w'] or (p['deadband_w'] * DEADBAND_MARGIN if p['deadband_w'] > 0.0 else 0.05)
+            wp = self._pulse_size()
             self._pulse_left = max(1, round(abs(e) / (wp * dt))) + int(p['pulse_extra'])
             self._pulse_w = math.copysign(wp, e)
             self._fine = 'pulse'
@@ -268,84 +321,8 @@ class PathTracker(_Compensator):
             self._hist.clear()                    # the at-rest window must contain only post-pulse data
         return 0.0, self._pulse_w
 
-    # ---- one control step ----------------------------------------------------------------
-    def step(self, pose, dt=0.05):
-        p = self.p
-        if self.mode == DONE:
-            return 0.0, 0.0
-        x, y, yaw = self._predict(pose, dt)
-        v_max, w_max = p['max_linear_speed'], p['max_angular_speed']
-        v_min, w_min = p['min_linear_speed'], p['min_angular_speed']
-        v = w = 0.0
-        while True:
-            gx, gy, gth = self.path[self.idx]
-            last = self.idx == len(self.path) - 1
-            v = w = 0.0
-            if self.mode == GO:
-                if self.strategy == 'stop_turn':
-                    v, w, dist, _ = go_to_point_control(
-                        x, y, yaw, gx, gy, p['kv'], p['kw'], v_max, w_max, self.turn_in_place)
-                    arrived = dist <= p['pos_tolerance']
-                elif self.strategy == 'polar':
-                    v, w, dist, _ = pose_control(
-                        x, y, yaw, gx, gy, gth, p['k_rho'], p['k_alpha'], p['k_beta'],
-                        v_max, w_max, p['decel'] if last else 0.0)
-                    if dist <= (p['pos_tolerance'] if last else p['blend_radius']):
-                        if not last:     # blend: hand over to the next point without stopping
-                            self.events.append(
-                                f'point {self.idx + 1}/{len(self.path)} passed '
-                                f'(pos=({x:.3f},{y:.3f}), {dist * 100:.1f} cm off)')
-                            self.idx += 1
-                            continue
-                        arrived = True
-                    else:
-                        arrived = False
-                else:  # pure_pursuit
-                    self.seg, t = project_on_path(self.polyline, x, y, self.seg)
-                    lx, ly, rem = lookahead_point(self.polyline, self.seg, t, p['lookahead'])
-                    # path length left, but never less than the straight-line distance to the end:
-                    # after an overshoot the projection is clamped to the end and rem would be 0
-                    # (speed cap 0 = deadlock)
-                    rem = max(rem, math.hypot(self.polyline[-1][0] - x, self.polyline[-1][1] - y))
-                    v, w, _ = pure_pursuit_control(
-                        x, y, yaw, (lx, ly), v_max, w_max, p['lookahead'], rem, p['decel'])
-                    self.idx = min(self.seg, len(self.path) - 1)    # progress, for the log
-                    gx, gy, gth = self.path[-1]
-                    dist = math.hypot(gx - x, gy - y)
-                    arrived = self.seg >= len(self.polyline) - 2 and dist <= p['pos_tolerance']
-                if arrived:
-                    v = w = 0.0
-                    self.mode = ALIGN
-                    self.events.append(
-                        f'point {self.idx + 1}/{len(self.path)} position reached '
-                        f'(err {dist * 100:.1f} cm), aligning')
-                else:
-                    if 0.0 < v < v_min:
-                        v = v_min
-                    if v == 0.0 and 0.0 < abs(w) < w_min:
-                        w = math.copysign(w_min, w)
-            break
-        if self.mode == ALIGN:
-            if self.strategy == 'pure_pursuit':
-                gx, gy, gth = self.path[-1]
-            if self._fine_align_applies():
-                v, w = self._align_fine(pose, (x, y, yaw), gx, gy, gth, dt)
-                self.gx, self.gy, self.gth = gx, gy, gth
-                return self._shape(v, w)
-            tol = p['yaw_tolerance']
-            if (p['smooth_yaw_tolerance'] > tol and self.strategy != 'pure_pursuit' and
-                    self._turn_at(self.idx) <= p['rest_corner_deg']):
-                tol = p['smooth_yaw_tolerance']          # smooth curve point: no need to align exactly
-            w, err = yaw_p_control(gth, yaw, p['k_yaw'], w_max, w_min, tol)
-            v = 0.0
-            if abs(err) <= tol:
-                self._finish_point(x, y, yaw, err)
-                w = 0.0
-        self.gx, self.gy, self.gth = gx, gy, gth
-        return self._shape(v, w)
 
-
-# ---- yaw controller -----------------------------------------------------------------------------
+# ---- yaw controller (single-state P heading control) -------------------------------------------
 # Parameters shared with the motion controller (same meaning, same defaults).
 COMPENSATION_KEYS = ('lead_w', 'vel_filter', 'vel_window', 'rest_window', 'rest_pos', 'rest_yaw', 'rest_timeout',
                      'settle_time', 'rest_retries', 'pulse_w', 'pulse_extra',
@@ -361,7 +338,7 @@ YAW_DEFAULTS = dict(
     **{k: DEFAULTS[k] for k in COMPENSATION_KEYS})
 
 
-class YawTracker(_Compensator):
+class YawTracker(Compensator):
     """Yaw reference tracking. With rest_window == 0 it is the plain P law (legacy behaviour). With
     rest_window > 0 it uses the lead prediction, waits for the robot to really stop, checks the true error
     and corrects with exact minimum-size pulses (needed when the robot has a command deadband and a slow
@@ -420,7 +397,7 @@ class YawTracker(_Compensator):
                 self.reached = True
                 return 0.0
             self._retries += 1
-            wp = p['pulse_w'] or (p['deadband_w'] * DEADBAND_MARGIN if p['deadband_w'] > 0.0 else 0.05)
+            wp = self._pulse_size()
             self._pulse_left = max(1, round(abs(e) / (wp * dt))) + int(p['pulse_extra'])
             self._pulse_w = math.copysign(wp, e)
             self._fine = 'pulse'

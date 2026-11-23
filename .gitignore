@@ -13,6 +13,3 @@ results/acceptance/
 results/figures/
 results/report/
 *.egg-info/
-# the course Gazebo packages are not part of this repository (see README)
-src/cc_robot_urdf/
-src/lab3_gazebo/

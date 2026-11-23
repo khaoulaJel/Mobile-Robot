@@ -75,50 +75,67 @@ class Abstraction:
 
     # ---- the transition table ------------------------------------------------------------------------
     def build(self):
-        """Fill the table: for every (state, input) the sorted unique list of ALL successor states."""
-        N, M, tau = self.N, len(self.inputs), self.tau
+        """Fill the table: for every (state, input) the sorted unique list of ALL successor states.
+
+        Stored in CSR form: the successors of pair k = state * M + input are succ[indptr[k]:indptr[k+1]].
+        All N cells are processed at once (numpy arrays of length N), once per input."""
+        N, M = self.N, len(self.inputs)
         cx, cy, cth = self.centre(self.cells[:, 0], self.cells[:, 1], self.cells[:, 2])
-        hx, hth = self.dx / 2.0, self.dth / 2.0
-        rows, cols = [], []
+        rows, cols = [], []                       # one entry per (pair, successor)
         for m, (v, w) in enumerate(self.inputs):
-            if abs(w) < 1e-9:
-                nx_ = cx + v * tau * np.cos(cth)
-                ny_ = cy + v * tau * np.sin(cth)
-            else:
-                nx_ = cx + (v / w) * (np.sin(cth + w * tau) - np.sin(cth))
-                ny_ = cy - (v / w) * (np.cos(cth + w * tau) - np.cos(cth))
-            nth = cth + w * tau
-            r = hx + abs(v) * tau * hth                      # sound radius of the image of the cell in x and y
-            ix_lo = np.floor((nx_ - r - self.x0) / self.dx).astype(int)
-            ix_hi = np.floor((nx_ + r - self.x0) / self.dx).astype(int)
-            iy_lo = np.floor((ny_ - r - self.y0) / self.dx).astype(int)
-            iy_hi = np.floor((ny_ + r - self.y0) / self.dx).astype(int)
-            it_lo = np.floor((nth - hth + math.pi) / self.dth + 1e-9).astype(int)
-            it_hi = np.floor((nth + hth + math.pi) / self.dth - 1e-9).astype(int)
-            span_x = int((ix_hi - ix_lo).max()) + 1
-            span_y = int((iy_hi - iy_lo).max()) + 1
-            span_t = int((it_hi - it_lo).max()) + 1
-            src = np.arange(N)
-            for ox in range(span_x):
-                for oy in range(span_y):
-                    for ot in range(span_t):
-                        jx, jy, jt = ix_lo + ox, iy_lo + oy, it_lo + ot
-                        valid = (jx <= ix_hi) & (jy <= iy_hi) & (jt <= it_hi)
-                        inside = valid & (jx >= 0) & (jx < self.nx) & (jy >= 0) & (jy < self.ny)
-                        dest = np.full(N, self.OUT, np.int64)
-                        k = self.index[np.clip(jx, 0, self.nx - 1), np.clip(jy, 0, self.ny - 1), jt % self.n_th]
-                        dest[inside] = np.where(k[inside] < 0, self.OUT, k[inside])
-                        rows.append(src[valid] * M + m)
-                        cols.append(dest[valid])
-        rows, cols = np.concatenate(rows), np.concatenate(cols)
+            # 1. where does the CENTRE of every cell go under this input, and which cell range does the
+            #    image of the whole cell cover?
+            lo, hi = self._image_range(cx, cy, cth, v, w)
+            # 2. list every cell in those ranges (the same loop for all states; invalid ones are masked)
+            span = [int((hi[i] - lo[i]).max()) + 1 for i in range(3)]
+            for ox in range(span[0]):
+                for oy in range(span[1]):
+                    for ot in range(span[2]):
+                        j = (lo[0] + ox, lo[1] + oy, lo[2] + ot)
+                        valid = (j[0] <= hi[0]) & (j[1] <= hi[1]) & (j[2] <= hi[2])
+                        rows.append(np.arange(N)[valid] * M + m)
+                        cols.append(self._dest(*j)[valid])
+        self._store(np.concatenate(rows), np.concatenate(cols))
+        return self
+
+    def _image_range(self, cx, cy, cth, v, w):
+        """Integer cell ranges (lo, hi), each a tuple (x, y, theta), covered by the image of every cell under
+        the input (v, w) held for tau. The image of the centre is exact; the cell's size is added as the
+        sound radius r (position) and h_th (heading)."""
+        tau, hth = self.tau, self.dth / 2.0
+        if abs(w) < 1e-9:                                    # straight line
+            nx_ = cx + v * tau * np.cos(cth)
+            ny_ = cy + v * tau * np.sin(cth)
+        else:                                                # circular arc
+            nx_ = cx + (v / w) * (np.sin(cth + w * tau) - np.sin(cth))
+            ny_ = cy - (v / w) * (np.cos(cth + w * tau) - np.cos(cth))
+        nth = cth + w * tau
+        r = self.dx / 2.0 + abs(v) * tau * hth               # sound radius of the image in x and y
+        lo = (np.floor((nx_ - r - self.x0) / self.dx).astype(int),
+              np.floor((ny_ - r - self.y0) / self.dx).astype(int),
+              np.floor((nth - hth + math.pi) / self.dth + 1e-9).astype(int))
+        hi = (np.floor((nx_ + r - self.x0) / self.dx).astype(int),
+              np.floor((ny_ + r - self.y0) / self.dx).astype(int),
+              np.floor((nth + hth + math.pi) / self.dth - 1e-9).astype(int))
+        return lo, hi
+
+    def _dest(self, jx, jy, jt):
+        """State index of cell (jx, jy, jt) for every source state; OUT if outside the box or the safe set."""
+        inside = (jx >= 0) & (jx < self.nx) & (jy >= 0) & (jy < self.ny)
+        k = self.index[np.clip(jx, 0, self.nx - 1), np.clip(jy, 0, self.ny - 1), jt % self.n_th]
+        dest = np.full(self.N, self.OUT, np.int64)
+        dest[inside] = np.where(k[inside] < 0, self.OUT, k[inside])
+        return dest
+
+    def _store(self, rows, cols):
+        """Sort, remove duplicates (also repeated OUT) and keep the table in CSR form."""
         order = np.lexsort((cols, rows))
         rows, cols = rows[order], cols[order]
         keep = np.ones(len(rows), bool)
-        keep[1:] = (rows[1:] != rows[:-1]) | (cols[1:] != cols[:-1])      # remove duplicates (also repeated OUT)
+        keep[1:] = (rows[1:] != rows[:-1]) | (cols[1:] != cols[:-1])
         rows, cols = rows[keep], cols[keep]
         self.succ = cols.astype(np.int32)
-        self.indptr = np.concatenate([[0], np.cumsum(np.bincount(rows, minlength=N * M))])
-        return self
+        self.indptr = np.concatenate([[0], np.cumsum(np.bincount(rows, minlength=self.N * len(self.inputs)))])
 
     def successors(self, q, m):
         k = q * len(self.inputs) + m

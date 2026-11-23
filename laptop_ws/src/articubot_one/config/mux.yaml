@@ -1,0 +1,15 @@
+twist_mux:
+  ros__parameters:
+    topics:
+      manual:
+        priority: 100
+        timeout: 0.5
+        topic: /cmd_vel_joy
+      simulink:
+        priority: 50
+        timeout: 0.5
+        topic: /cmd_vel
+      tracker:
+        priority: 10
+        timeout: 0.5
+        topic: /cmd_vel_tracker

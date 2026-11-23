@@ -70,7 +70,7 @@ See `docs/symbolic_control.md` for the design and results.
 ## Run (simulation)
 
     source /opt/ros/humble/setup.bash
-    cd <repository root> && colcon build --symlink-install && source install/setup.bash
+    cd <repository root> && colcon build --symlink-install --base-paths src && source install/setup.bash
     ros2 launch lab3_gazebo gazebo.launch.py                 # terminal 1 (course package, see the root README)
 
     # terminal 2: ONE controller at a time (all publish to the same command topic)

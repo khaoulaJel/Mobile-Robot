@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.16)
+project(articubot_one)
+find_package(ament_cmake REQUIRED)
+install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME} PATTERN "__pycache__" EXCLUDE)
+install(PROGRAMS scripts/wait_for_hardware.py DESTINATION lib/${PROJECT_NAME})
+ament_package()

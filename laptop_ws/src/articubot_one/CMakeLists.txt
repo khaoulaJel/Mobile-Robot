@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.8)
+project(articubot_one)
+find_package(ament_cmake REQUIRED)
+install(DIRECTORY launch config description matlab DESTINATION share/${PROJECT_NAME})
+ament_package()

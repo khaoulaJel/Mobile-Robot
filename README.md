@@ -28,13 +28,18 @@ and send zero commands on shutdown.
 ## Repository layout
 
 ```
+src/cc_robot_urdf/        (simulation workspace) robot model for Gazebo (course material)
+src/lab3_gazebo/          Gazebo world and launch file (course material)
 src/lab3_controllers/
-  lab3_controllers/   common.py (control laws), tracker.py (shared path/yaw logic), symbolic.py (abstraction, table, synthesis),
+  lab3_controllers/   common.py (control laws), tracker.py (path/yaw state machine), compensation.py (slow-robot compensation),
+                      symbolic.py (abstraction, table, synthesis),
                       yaw_controller.py, motion_controller.py, symbolic_controller.py, state_input.py
   config/             controllers.yaml (Gazebo), robust.yaml, lab_robot.yaml, hardware.yaml, symbolic_circle.npz
   launch/             yaw / motion / symbolic launch files
   test/               unit and regression tests (pytest)
   tools/              model and simulation tools, tuning, measurement, acceptance suite (run_all.sh)
+pi_ws/src/             Raspberry Pi workspace (course material): articubot_one (hardware.launch.py), diffdrive_arduino, ldlidar_stl_ros2
+laptop_ws/             laptop workspace (course material): run_desktop.sh, EKF, SLAM, twist_mux, joystick, RViz
 docs/                 controllers.md, symbolic_control.md, real_robot.md
 results/              generated result tables (lab robot model, symbolic model)
 ```
@@ -43,17 +48,16 @@ results/              generated result tables (lab robot model, symbolic model)
 
 - ROS 2 Humble, Gazebo Classic 11 (for the simulation tests), Python 3.10.
 - Python packages for the tools and tests: `numpy`, `matplotlib`, `pytest`, `PyYAML`.
-- The course Gazebo workspace packages `cc_robot_urdf` and `lab3_gazebo` (robot model, world, launch file). They are course material and are
-  **not included**: copy them from the course `lab3.zip` into `src/` next to `lab3_controllers`.
+- Everything needed is in this repository. Course material is included unchanged: `src/cc_robot_urdf`, `src/lab3_gazebo` (simulation), `pi_ws/` (robot side) and `laptop_ws/` (laptop side). Licenses: Apache-2.0 / MIT, see each package.
 
 ## Build and run
 
 ```bash
 source /opt/ros/humble/setup.bash
-colcon build --symlink-install
+colcon build --symlink-install --base-paths src       # only src/ (pi_ws and laptop_ws are separate workspaces)
 source install/setup.bash
 
-ros2 launch lab3_gazebo gazebo.launch.py                 # simulation (course package); run ONE controller at a time
+ros2 launch lab3_gazebo gazebo.launch.py                 # simulation; run ONE controller at a time
 ros2 launch lab3_controllers yaw.launch.py
 ros2 launch lab3_controllers motion.launch.py            # 0.5 m square, stop_turn
 ros2 run lab3_controllers motion_controller --ros-args -p use_sim_time:=true \
@@ -69,6 +73,18 @@ Presets (`config:=...` on the yaw and motion launch files):
 | `robust.yaml` | slower or noisier motors, relaxed tolerances |
 | `lab_robot.yaml` | a robot that drops small commands (|v| <= 0.04 and |w| <= 0.2) and responds slowly (coasting about 0.6 s / 1.0 s) |
 | `hardware.yaml` | real robot, first run: state `/diff_cont/odom`, command `/cmd_vel_tracker`, conservative limits |
+
+## Real robot (three parts)
+
+```
+Raspberry Pi   pi_ws/       robot driver: Arduino wheels, encoders, lidar        ros2 launch articubot_one hardware.launch.py
+Laptop         laptop_ws/   robot_description, EKF, SLAM, twist_mux, joystick   ./run_desktop.sh      (install_dependencies.sh, build.sh first)
+Laptop         this repo    OUR controllers (publish /cmd_vel_tracker)           ros2 launch lab3_controllers motion.launch.py config:=hardware.yaml use_sim_time:=false
+```
+
+Both machines: same LAN, `ROS_DOMAIN_ID=0`, `ROS_LOCALHOST_ONLY=0`, `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`, synchronised clocks (see `laptop_ws/START_HERE.md`).
+Pi build: copy `pi_ws/` to the Pi and run `colcon build --symlink-install` there. The joystick keeps priority over our controllers in `twist_mux`.
+Commissioning order (measure, first motion, tests): `docs/real_robot.md`.
 
 ## Tests
 

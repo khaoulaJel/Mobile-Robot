@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.8)
+project(cc_pose_tools)
+find_package(ament_cmake REQUIRED)
+install(PROGRAMS scripts/tf_to_pose.py DESTINATION lib/${PROJECT_NAME})
+ament_package()

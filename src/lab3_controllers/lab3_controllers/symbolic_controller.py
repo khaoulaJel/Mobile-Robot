@@ -142,38 +142,13 @@ class SymbolicController(Node):
             self.publish(0.0, 0.0)
             return
         x, y, th = self.to_circle_frame()
-        radius = float(self.policy.meta['radius'])
-        cx, cy = float(self.policy.meta.get('centre_x', 0.0)), float(self.policy.meta.get('centre_y', radius))
-        radial = math.hypot(x - cx, y - cy) - radius
-        q = self.policy.state_index(x, y, th)
-        if now >= self.next_update:
+        radial = self.radial_error(x, y)
+        q = self.policy.state_index(x, y, th)            # the cell the robot is in (-1 = outside the tube)
+        if now >= self.next_update:                      # once per tau: choose a new input
             self.next_update = self.next_update + Duration(seconds=self.tau)
-            if self.next_update < now:                  # fell behind (e.g. paused): do not catch up in a burst
+            if self.next_update < now:                   # fell behind (e.g. paused): do not catch up in a burst
                 self.next_update = now + Duration(seconds=self.tau)
-            if q >= 0:
-                while self.k < self.n_goals and self.policy.goal_reached(self.k, q):
-                    self.get_logger().info(f'goal arc {self.k + 1}/{self.n_goals} reached '
-                                           f'(radial error {radial * 100:.1f} cm)')
-                    self.k += 1
-            if self.k >= self.n_goals:
-                self.mode = 'DONE'
-                self.get_logger().info(f'lap complete ({self.n_robust} neighbour-cell fallbacks used)')
-            else:
-                u = self.policy.action(self.k, q) if q >= 0 else None
-                if u is None and self.robust:
-                    u = self.policy.robust_action(self.k, x, y, th)
-                    if u is not None:
-                        self.n_robust += 1
-                        self.get_logger().warn(
-                            f'no input for the measured cell (radial error {radial * 100:.1f} cm): using the best '
-                            f'neighbouring cell - outside the formal guarantee', throttle_duration_sec=5.0)
-                if u is None:
-                    self.mode = 'FAILED'
-                    self.get_logger().error(
-                        f'left the modelled tube or no winning input (radial error {radial * 100:.1f} cm, heading '
-                        f'{math.degrees(th):.0f} deg): the guarantee no longer holds, stopping')
-                else:
-                    self.u = u
+            self.update_input(q, x, y, th, radial)
         if self.mode == 'RUN':
             self.publish(*self.u)
         else:
@@ -182,6 +157,43 @@ class SymbolicController(Node):
             t = (now - self.t_start).nanoseconds * 1e-9
             self.log.write(f'{t:.3f},{x:.4f},{y:.4f},{th:.4f},{radial:.4f},{self.k},{q},{self.v_cmd:.4f},'
                            f'{self.w_cmd:.4f},{self.mode}\n')
+
+    def radial_error(self, x, y):
+        """Distance from the circle (positive outside), for logging."""
+        radius = float(self.policy.meta['radius'])
+        cx, cy = float(self.policy.meta.get('centre_x', 0.0)), float(self.policy.meta.get('centre_y', radius))
+        return math.hypot(x - cx, y - cy) - radius
+
+    def update_input(self, q, x, y, th, radial):
+        """The symbolic controller proper: cell -> goal check -> input from the synthesized policy."""
+        # 1. goal arcs reached? (several can be passed at once)
+        if q >= 0:
+            while self.k < self.n_goals and self.policy.goal_reached(self.k, q):
+                self.get_logger().info(f'goal arc {self.k + 1}/{self.n_goals} reached '
+                                       f'(radial error {radial * 100:.1f} cm)')
+                self.k += 1
+        if self.k >= self.n_goals:
+            self.mode = 'DONE'
+            self.get_logger().info(f'lap complete ({self.n_robust} neighbour-cell fallbacks used)')
+            return
+        # 2. the policy's input for this cell and goal
+        u = self.policy.action(self.k, q) if q >= 0 else None
+        # 3. no input: optionally use the best neighbouring cell (outside the formal guarantee)
+        if u is None and self.robust:
+            u = self.policy.robust_action(self.k, x, y, th)
+            if u is not None:
+                self.n_robust += 1
+                self.get_logger().warn(
+                    f'no input for the measured cell (radial error {radial * 100:.1f} cm): using the best '
+                    f'neighbouring cell - outside the formal guarantee', throttle_duration_sec=5.0)
+        # 4. still nothing: the robot left the tube, stop
+        if u is None:
+            self.mode = 'FAILED'
+            self.get_logger().error(
+                f'left the modelled tube or no winning input (radial error {radial * 100:.1f} cm, heading '
+                f'{math.degrees(th):.0f} deg): the guarantee no longer holds, stopping')
+        else:
+            self.u = u
 
     def stop(self):
         try:

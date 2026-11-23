@@ -1,0 +1,2 @@
+# Validation notes
+The original tests described here were performed on the original IMU-enabled workspace, not on this modified version. This version removes the IMU driver and calibration and configures the EKF to consume exclusively encoder-derived /diff_cont/odom twist. The existing laptop EKF remains the publisher of /odometry/filtered and odom -> base_link TF. SLAM, joystick, mux, and LiDAR are otherwise unchanged. Run the supplied build scripts and validate with live hardware before driving.

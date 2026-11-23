@@ -27,12 +27,12 @@ The path is a flat list `[x, y, theta, ...]` or a generated circle (`path_shape:
 | `polar` | `v = k_rho * rho * cos(alpha)`, `w = k_alpha * alpha + k_beta * beta` (stable for `k_rho > 0`, `k_beta < 0`, `k_alpha > k_rho`) | one smooth motion, hands over within `blend_radius`; rounds corners |
 | `pure_pursuit` | look-ahead point on the path, curvature `2 sin(alpha) / lookahead`, speed capped by `sqrt(2 * decel * remaining)` | fast; best on smooth curves |
 
-The control logic lives in `lab3_controllers/tracker.py` (`PathTracker`, `YawTracker`) and is shared by the ROS nodes and the model tools, so what is
+The control logic lives in `lab3_controllers/tracker.py` (`PathTracker`, `YawTracker`; a GO -> ALIGN -> DONE state machine, one small method per strategy) and is shared by the ROS nodes and the model tools, so what is
 tuned in the model is what runs on the robot.
 
 ## Compensation for a robot that drops small commands and responds slowly
 
-All off by default (Gazebo behaviour is unchanged); enabled by `config/lab_robot.yaml` and `config/hardware.yaml`.
+Code: `lab3_controllers/compensation.py`. All off by default (Gazebo behaviour is unchanged); enabled by `config/lab_robot.yaml` and `config/hardware.yaml`.
 
 | Parameters | Effect |
 | --- | --- |
