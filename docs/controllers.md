@@ -60,20 +60,29 @@ ros2 topic pub --once /reference_yaw std_msgs/msg/Float64 "{data: 0.7854}"
 Invalid coefficients (for example `k_beta > 0` with the polar strategy) are rejected with an error and the robot stays stopped until they are repaired.
 Test: `tools/check_reference.py` (simulated robot, six strict checks, also part of `tools/run_all.sh`).
 
-## Slow, late, freezing state: timed mode, observer and PID (heading)
+## The P family on a robot with a deadband and a slow, late, freezing state (heading and position)
 
-The map pose `/robot_pose` arrives slowly, late, noisy and with freezes. For that case the heading controller has an opt-in layer (all off by default; with it off the
-controller is identical to before). Full explanation, parameters of the run, simulation conditions and results: `results/real_robot/tuning_report.md`.
+Defended design, from a fair study (`results/real_robot/tuning_report.md`): P, PI, PD, PID and PID + rest/pulse layer, each tuned with the same optimiser and budget, judged on 300
+validation cases none was tuned on, including a robot that differs from the model.
+
+| Channel | Structure | Mean final error (normal / stress / wrong robot) | Plain P law |
+| --- | --- | --- | --- |
+| heading | **PD** with a model-based observer (`use_observer`, `lead_w` = derivative) | 0.26 / 0.36 / 2.31 deg | 4.6 / 5.9 / 8.4 deg |
+| forward position x, x-dot | **PID** with a model-based observer (`LinearTracker`) | 0.15 / 0.29 / 0.58 cm | 0.46 / 0.82 / 3.95 cm |
+
+P and PI cannot beat the robot's command deadband; the derivative (the observer's rate) is what makes the difference, and the integral term helps the position, where it pushes
+through the forward-speed deadband. The extra rest/pulse layer and an adaptive deadband were tested and are NOT better (see the report).
 
 | Part | Parameters | What it does |
 | --- | --- | --- |
-| timed mode | `use_state_stamps` (node), `pose_latency`, `vel_span`, `rest_mean_test` | the controller gets each sample's time stamp and age; speed is a least-squares slope of the NEW samples; estimates are cleared after a gap; "at rest" is judged by window averages |
-| observer (`observer.py`) | `use_observer`, `obs_tau`, `obs_gain`, `obs_k1`, `obs_k2` | simulates the robot (deadband, lag, gain) from the commands really sent, corrected by the late pose; keeps running through a freeze |
-| PID form | `ki` | integral term near the target with anti-windup |
+| timed mode | `use_state_stamps` (node), `pose_latency`, `vel_span`, `rest_mean_test` | each sample's time stamp and age go to the controller; speed is a least-squares slope of the NEW samples; estimates are cleared after a gap |
+| observer (`observer.py`) | `use_observer`, `obs_tau`, `obs_gain`, `obs_k1`, `obs_k2` (position: `x_use_observer`, `x_obs_*`) | simulates the robot (deadband, lag, gain) from the commands really sent, corrected by the late pose; keeps running through a freeze |
+| integral | `ki` (heading), `ki_v` (position) | integral term with anti-windup |
+| derivative | `lead_w` (heading), `lead_v` (position) | predicted rest value = value + observer rate x lead |
 
-`config/reference_lab_robot_tuned.yaml` is the tuned set (`tools/tune_heading_real.py` on `tools/yaw_real_sim.py`, validated on cases the search never saw): on the
-professor's robot model 0.31 deg mean error and 100 % within 1 deg in normal conditions, 0.51 deg and 90 % under stress (slow source, long freezes, +-20 % robot gain),
-against 4.7 / 8.1 deg for the plain P law and 0.47 / 0.84 deg for the earlier preset. Simulation only; re-measure and re-tune on the real robot.
+`config/reference_lab_robot_tuned.yaml` is the heading preset (PD); `tests/test_tuned_heading_preset.py` keeps it at its claimed accuracy. The position controller (`LinearTracker`) is
+tested (`test_linear_tracker.py`) and tuned in the study; its use inside the node (`/reference_x`, and a go-to-point controller made of the two channels) is the next step.
+All results are simulation results with the professor's robot model: measure the robot's deadband and re-tune (`tools/p_family_study.py`, `tools/x_family_study.py`).
 
 ## Compensation for a robot that drops small commands and responds slowly
 
@@ -103,7 +112,8 @@ Typical coasting times and the deadband of a given robot are measured with `tool
 | `simulink_replay/` | replay a command stream through the Simulink filter and state-space blocks and compare with the Python model (MATLAB) |
 | `log_run.py` | read-only recorder of wheel odometry, map pose and commands during a run; its verdict says whether an unexpected position change comes from the robot (does not turn on the spot), from SLAM corrections (the map pose jumps), or from our commands |
 | `check_reference.py` | strict test of the reference controller against a simulated robot (8 checks) |
-| `yaw_real_sim.py`, `tune_heading_real.py`, `effective_params.py` | heading under the real pose-source conditions; coefficient search with unseen validation cases; the full parameter set of a run |
+| `yaw_real_sim.py`, `x_real_sim.py` | heading / forward position under the real pose-source conditions (slow, late, noisy, freezing; wrong deadband and lag) |
+| `p_family_study.py`, `x_family_study.py`, `p_family_robustness.py`, `tune_heading_real.py`, `effective_params.py` | the fair P / PI / PD / PID comparison with unseen validation cases, the robustness table, the coefficient search, the full parameter set of a run |
 | `robot_session.sh` | robot-day helper: `check`, `measure`, `reference`, `send-pose`, `send-yaw`, `set`, `stop` |
 | `generate_symbolic.py`, `symbolic_sim.py` | build the symbolic model and controller; closed-loop simulation of it |
 | `preview_lqr.py`, `tune_preview.py`, `lqr_compare.py` | experimental preview LQR (linear MPC) with the identified plant: better on smooth curves, sensitive to unmodelled delay; not used by the nodes |

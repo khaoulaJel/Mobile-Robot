@@ -40,6 +40,8 @@ class Compensator:
         self._timed = False               # True once the caller supplies sample time stamps
         self._tlast = None                # stamp of the newest sample
         self._tvhist = deque()            # timed mode: (stamp, pose) of recent samples for the velocity estimate
+        self._dyn_dead = {}               # adapted deadbands ('v' / 'w'), see _adapt_deadband
+        self._stall_t = {'v': 0.0, 'w': 0.0}
         self._thist = deque()             # timed mode: (stamp, pose) of the rest-detection window
 
     # ---- 1. lead prediction ------------------------------------------------------------------
@@ -197,7 +199,7 @@ class Compensator:
         """Keep the command out of the robot's deadband and inside its feasible set, so the robot's
         input filter never drops it. Both steps scale (v, w) together, i.e. keep the curvature."""
         p = self.p
-        dv, dw = p['deadband_v'], p['deadband_w']
+        dv, dw = self.deadband('v'), self.deadband('w')
         if (v != 0.0 or w != 0.0) and dv > 0.0 and dw > 0.0 and abs(v) <= dv and abs(w) <= dw:
             # smallest scale factor that leaves the deadband rectangle along either axis
             factors = []
@@ -214,7 +216,28 @@ class Compensator:
                 v, w = v * f, w * f
         return v, w
 
+    # ---- 4. adaptive deadband ----------------------------------------------------------------
+    def deadband(self, which):
+        """The deadband the controller currently believes ('v' m/s or 'w' rad/s): the configured one, or the adapted one."""
+        return self._dyn_dead.get(which, self.p['deadband_' + which])
+
+    def _adapt_deadband(self, which, u_sent, rate_measured, dt):
+        """The robot's real deadband can be larger than the one we were told. Symptom: we keep sending a command that is above the
+        believed deadband and the MEASURED rate stays far below what it asks for. After `adapt_time` seconds of that, raise the
+        believed deadband to adapt_factor x the stalled command (never above 3 x the configured one). Timed mode only; it only
+        ever raises: a too-large deadband is safe (coarser), a too-small one makes the robot ignore us."""
+        p = self.p
+        nominal = p['deadband_' + which]
+        if not p['adapt_deadband'] or nominal <= 0.0:
+            return
+        cur = self.deadband(which)
+        stalled = 1.05 * cur <= abs(u_sent) <= 2.0 * cur and abs(rate_measured) < 0.3 * abs(u_sent)     # small commands only
+        self._stall_t[which] = self._stall_t[which] + dt if stalled else 0.0
+        if self._stall_t[which] >= p['adapt_time']:
+            self._dyn_dead[which] = min(3.0 * nominal, max(cur, p['adapt_factor'] * abs(u_sent)))
+            self._stall_t[which] = 0.0
+
     def _pulse_size(self):
         """Angular speed of one corrective heading pulse: the smallest the robot will not drop."""
         p = self.p
-        return p['pulse_w'] or (p['deadband_w'] * DEADBAND_MARGIN if p['deadband_w'] > 0.0 else 0.05)
+        return p['pulse_w'] or (self.deadband('w') * DEADBAND_MARGIN if self.deadband('w') > 0.0 else 0.05)

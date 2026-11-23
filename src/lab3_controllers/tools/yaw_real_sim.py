@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Heading control under the REAL conditions of the professor's robot (no ROS).
 
     robot         identified velocity model behind the command filter (deadband 0.2 rad/s, diamond), tools/plant_models.py
@@ -82,9 +82,13 @@ class NodeLoop:
         return self.w_cmd
 
 
-def run_case(params, y0_deg, ref_deg, source_kw, hold=30.0, loop_factory=None, plant_gain=1.0, jumps=()):
-    """jumps: [(time s, degrees)]: SLAM corrects the map heading, i.e. the (map) heading changes instantly."""
-    plant = pm.IdentifiedPlant(use_filter=True, gain=(1.0, plant_gain))
+def run_case(params, y0_deg, ref_deg, source_kw, hold=30.0, loop_factory=None, plant_gain=1.0, jumps=(),
+             true_deadband_w=0.2, extra_lag=0.0):
+    """jumps: [(time s, degrees)]: SLAM corrects the map heading, i.e. the (map) heading changes instantly.
+    true_deadband_w / extra_lag: the REAL robot differs from the model the controller knows (deadband in rad/s, an extra first-order
+    lag in seconds); the defaults are the professor's model."""
+    base = pm.IdentifiedPlant(use_filter=False, gain=(1.0, plant_gain))
+    plant = pm.Chain(base, extra_lag) if extra_lag > 0 else base
     src = PoseSource(**source_kw)
     timed = bool(params.get('_timed', False))
     loop = (loop_factory or (lambda p: NodeLoop({k: v for k, v in p.items() if k != '_timed'}, timed=timed)))(params)
@@ -98,7 +102,8 @@ def run_case(params, y0_deg, ref_deg, source_kw, hold=30.0, loop_factory=None, p
             yaw = wrap_angle(yaw + math.radians(pending.pop(0)[1]))
         src.update(t, yaw)
         w = loop.tick(t, src.arrivals(t), ref)
-        _, ww = plant.step(0.0, w)
+        _, w_in = pm.input_filter(0.0, w, wdead=true_deadband_w)          # the real robot's command filter
+        _, ww = plant.step(0.0, w_in)
         yaw = wrap_angle(yaw + ww * DT)
         errs.append(math.degrees(wrap_angle(ref - yaw)))
     settle = next((i * DT for i in range(n - 1, -1, -1) if abs(errs[i]) > 1.0), -DT) + DT
@@ -108,16 +113,18 @@ def run_case(params, y0_deg, ref_deg, source_kw, hold=30.0, loop_factory=None, p
     return dict(final=errs[-1], settle=settle, over=over, worst_late=max(abs(e) for e in errs[int(n * 0.6):]))
 
 
-def make_cases(n, seed=1, stress=False):
+def make_cases(n, seed=1, stress=False, mismatch=False):
     """Random but reproducible turn problems and pose-source conditions (the unknowns of the real network).
-    stress=True: the harsher conditions suggested by the real run (slow source, long freezes, +-20 % robot gain, SLAM jumps)."""
+    stress=True: the harsher conditions suggested by the real run (slow source, long freezes, +-20 % robot gain, SLAM jumps).
+    mismatch=True: on top of that the REAL robot differs from the model the controller knows: its deadband is 0.12-0.30 rad/s
+    (the controller is told 0.2) and it has an extra lag of 0-0.4 s the model is unaware of."""
     rng = random.Random(seed)
     cases = []
     for i in range(n):
         y0 = rng.uniform(-180, 180)
         turn = rng.choice([-1, 1]) * rng.uniform(30, 150)
         ref = (y0 + turn + 180) % 360 - 180
-        if stress:
+        if stress or mismatch:
             src = dict(rate=rng.uniform(3.0, 15.0), latency=rng.uniform(0.05, 0.60), noise_deg=rng.uniform(0.2, 1.5),
                        freeze_period=rng.choice([20.0, 30.0, 35.0, 40.0]), freeze_len=rng.uniform(2.0, 6.0),
                        phase=rng.uniform(0, 35), seed=rng.randrange(10 ** 6))
@@ -128,12 +135,16 @@ def make_cases(n, seed=1, stress=False):
                        freeze_period=rng.choice([0.0, 35.0, 35.0, 20.0]), freeze_len=rng.uniform(2.0, 4.0),
                        phase=rng.uniform(0, 35), seed=rng.randrange(10 ** 6))
             jumps, gain = [], 1.0
-        cases.append(dict(y0=y0, ref=ref, source=src, jumps=jumps, plant_gain=gain))
+        case = dict(y0=y0, ref=ref, source=src, jumps=jumps, plant_gain=gain)
+        if mismatch:
+            case.update(true_deadband_w=rng.uniform(0.12, 0.30), extra_lag=rng.uniform(0.0, 0.4))
+        cases.append(case)
     return cases
 
 
 def evaluate(params, cases, **kw):
-    res = [run_case(params, c['y0'], c['ref'], c['source'], jumps=c['jumps'], plant_gain=c['plant_gain'], **kw) for c in cases]
+    res = [run_case(params, c['y0'], c['ref'], c['source'], jumps=c['jumps'], plant_gain=c['plant_gain'],
+                    true_deadband_w=c.get('true_deadband_w', 0.2), extra_lag=c.get('extra_lag', 0.0), **kw) for c in cases]
     finals = sorted(abs(r['final']) for r in res)
     return dict(
         mean_abs=sum(finals) / len(finals), median=finals[len(finals) // 2], p90=finals[int(len(finals) * 0.9)],

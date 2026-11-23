@@ -90,7 +90,7 @@ Network, firewall, CycloneDDS peers and start order that worked on the real setu
 ## Tests
 
 ```bash
-cd src/lab3_controllers && PYTHONPATH=. python3 -m pytest -q test      # 55 unit and regression tests, no ROS graph needed
+cd src/lab3_controllers && PYTHONPATH=. python3 -m pytest -q test      # 76 unit and regression tests, no ROS graph needed
 bash src/lab3_controllers/tools/run_all.sh                             # acceptance suite in Gazebo (strict numeric limits)
 ```
 
@@ -107,7 +107,7 @@ measurement tool. It exits non-zero if any check fails.
 | Circle of 1 m diameter, tangent start (Gazebo) | max distance from the circle 0.39 cm (`stop_turn`), 0.26 cm (`pure_pursuit`) |
 | 14 path shapes on the model of a deadband/slow robot | path error 0.2-1.6 cm, final heading error at most 0.45 deg (earlier settings: up to 4.4 cm and 33 deg) |
 | Reference controller (simulated robot, 0.15 s lag, strict limits) | pose reference 0.83 cm / 0.45 deg, yaw reference 0.23 deg, built-in target heading pi/2 0.22 deg, coefficient changes while running accepted, invalid coefficients rejected (`tools/check_reference.py`) |
-| Heading on the professor's robot model under real pose-source conditions (slow, late, freezing map pose) | tuned observer + PID: 0.31 deg mean, 100 % within 1 deg (normal); 0.51 deg, 90 % within 1 deg (stress); plain P law 4.7 / 8.1 deg (`results/real_robot/tuning_report.md`) |
+| P family on the professor's robot model (slow, late, freezing map pose; wrong-robot cases included), 300 unseen validation cases | heading: PD + observer 0.26 / 0.36 / 2.31 deg (normal / stress / wrong robot) vs plain P 4.6 / 5.9 / 8.4 deg; position: PID + observer 0.15 / 0.29 / 0.58 cm vs plain P 0.46 / 0.82 / 3.95 cm (`results/real_robot/tuning_report.md`) |
 | Symbolic controller | 345,888 cells; lap inside the +-8 cm tube on the exact model; in Gazebo 7.6-7.8 cm worst distance (little margin) |
 
 Details: `results/lab_robot_results.md`, `results/symbolic/summary.md`.

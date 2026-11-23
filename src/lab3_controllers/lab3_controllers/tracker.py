@@ -30,7 +30,7 @@ from lab3_controllers.common import (
     go_to_point_control, lookahead_point, pose_control, project_on_path,
     pure_pursuit_control, wrap_angle, yaw_p_control)
 from lab3_controllers.compensation import Compensator
-from lab3_controllers.observer import HeadingObserver
+from lab3_controllers.observer import HeadingObserver, PositionObserver
 
 GO, ALIGN, DONE = 'GO', 'ALIGN', 'DONE'
 STRATEGIES = ('stop_turn', 'polar', 'pure_pursuit')
@@ -79,6 +79,9 @@ DEFAULTS = dict(
     pose_latency=0.0,                # s   timed mode: delay of the state message (the sample is older than its arrival)
     vel_span=0.0,                    # s   timed mode: speed = least-squares slope over this many seconds of samples (0 = use vel_window)
     rest_mean_test=False,            # timed mode: judge "at rest" by window averages (robust to noisy poses)
+    adapt_deadband=False,            # timed mode: raise the believed deadband when the robot stalls (real deadband > configured)
+    adapt_time=2.0,                  # s   stall time before the deadband estimate is raised
+    adapt_factor=1.3,                #     new deadband estimate = this x the stalled command
     rest_retries=4,                  # heading pulses per point before accepting the heading
     pos_retries=3,                   # position re-approaches per point before accepting the position
     # --- robot command filter (professor's input_filter): commands outside the diamond or inside the
@@ -329,7 +332,7 @@ class PathTracker(Compensator):
 
 # ---- yaw controller (single-state P heading control) -------------------------------------------
 # Parameters shared with the motion controller (same meaning, same defaults).
-COMPENSATION_KEYS = ('lead_w', 'pose_latency', 'vel_span', 'rest_mean_test', 'vel_filter', 'vel_window', 'rest_window', 'rest_pos', 'rest_yaw', 'rest_timeout',
+COMPENSATION_KEYS = ('lead_w', 'pose_latency', 'vel_span', 'rest_mean_test', 'adapt_deadband', 'adapt_time', 'adapt_factor', 'vel_filter', 'vel_window', 'rest_window', 'rest_pos', 'rest_yaw', 'rest_timeout',
                      'settle_time', 'rest_retries', 'pulse_w', 'pulse_extra',
                      'diamond_v', 'diamond_w', 'deadband_v', 'deadband_w')
 
@@ -402,6 +405,7 @@ class YawTracker(Compensator):
         if self._obs is None:
             self._obs = HeadingObserver(tau=p['obs_tau'], gain=p['obs_gain'], latency=p['pose_latency'], k1=p['obs_k1'],
                                         k2=p['obs_k2'], deadband_w=p['deadband_w'])
+        self._obs.deadband = self.deadband('w')
         if now is None:
             self._clock += dt
             now = self._clock
@@ -422,11 +426,15 @@ class YawTracker(Compensator):
             pred = self._predict(pose, dt)[2]
         else:
             pred = self._predict_timed(pose, stamp, age)[2]           # also keeps the rest-test samples
+            self._adapt_deadband('w', self._u_sent, self.w_est, dt)   # the robot may ignore more than we think
             if p['use_observer']:
                 pred = self._observed_prediction(yaw, stamp, age, now, dt)
         tol = p['tolerance']
-        if p['rest_window'] <= 0.0:                                  # legacy P law (+ optional lead)
+        if p['rest_window'] <= 0.0:                                  # P law (+ optional lead = derivative, + optional integral)
             w, err = yaw_p_control(ref, pred, p['kp'], p['max_angular_speed'], p['min_angular_speed'], tol)
+            if p['ki'] > 0.0 and abs(err) > tol:                     # PI / PID: integral term with anti-windup
+                self._i = max(-0.5 / p['ki'], min(0.5 / p['ki'], self._i + err * dt)) if abs(err) < 0.35 else 0.0
+                w = max(-p['max_angular_speed'], min(p['max_angular_speed'], w + p['ki'] * self._i))
             self.reached = w == 0.0
             return self._shape(0.0, w)[1]
         if self._fine == 'hold':
@@ -465,3 +473,150 @@ class YawTracker(Compensator):
             self._min_wait = int(p['settle_time'] / dt)
             self._clear_rest_history()
         return self._shape(0.0, self._pulse_w)[1]
+
+
+# ---- position controller: x and x-dot along a line (the P family on the forward position) ---------------------------------------
+LINEAR_COMPENSATION_KEYS = ('lead_v', 'lead_w', 'rest_yaw', 'pose_latency', 'vel_span', 'rest_mean_test', 'adapt_deadband', 'adapt_time',
+                            'adapt_factor', 'vel_filter', 'vel_window', 'rest_window', 'rest_pos',
+                            'rest_timeout', 'settle_time', 'rest_retries', 'pulse_extra', 'diamond_v', 'diamond_w', 'deadband_v',
+                            'deadband_w')
+
+LINEAR_DEFAULTS = dict(
+    kv=0.8,                          # 1/s   proportional gain: v = kv * (x_ref - x)
+    ki_v=0.0,                        # 1/s^2 integral gain (PI / PID): pushes through the last centimetres; 0 = off
+    max_linear_speed=0.2,            # m/s
+    min_linear_speed=0.0,            # m/s   deadband compensation for the plain P law
+    pos_tolerance=0.01,              # m
+    hold_band=3.0,                   # x tolerance: a settled robot pushed further than this re-engages
+    pulse_v=0.0,                     # m/s   size of a correction pulse (0 = 1.1 * deadband_v)
+    # --- model-based observer of [x, x-dot] (timed mode): simulate the robot's forward-speed response, correct with the late pose ---
+    x_use_observer=False,
+    x_obs_tau=0.6,                   # s     forward-speed lag
+    x_obs_gain=1.0,                  #       forward-speed gain
+    x_obs_k1=0.5, x_obs_k2=0.5,      #       correction gains (position, speed)
+    **{k: DEFAULTS[k] for k in LINEAR_COMPENSATION_KEYS})
+
+
+class LinearTracker(Compensator):
+    """Position reference along a line: x (m) is the signed distance along the line; the output is the forward speed command (m/s).
+    The same design as YawTracker, for the forward position: P law; lead = derivative (predicted rest position x + x-dot * lead_v);
+    optional integral; optional model-based observer; optional rest-verify / correction-pulse layer (rest_window > 0)."""
+
+    def __init__(self, params=None):
+        p = dict(LINEAR_DEFAULTS)
+        p.update(params or {})
+        super().__init__(p)
+        self.ref = None
+        self.reached = False
+        self._obs = None
+        self._clock = 0.0
+        self._obs_stamp = None
+        self._u_sent = 0.0
+        self._cmd_fed = False
+        self._reset()
+
+    def observe_command(self, v_sent):
+        """Tell the controller the forward speed that was really published (after the caller's acceleration limit)."""
+        self._u_sent = v_sent
+        self._cmd_fed = True
+
+    def _reset(self):
+        self._i = 0.0
+        self._fine = 'drive'         # drive -> settle -> pulse -> settle ... -> hold
+        self._wait = self._min_wait = self._retries = 0
+        self._pulse_left = 0
+        self._pulse_v = 0.0
+        self.reached = False
+
+    def step(self, x, ref, dt, stamp=None, age=0.0, now=None):
+        """Forward speed command for the measured position `x` along the line and the reference `ref` (m)."""
+        v = self._step(x, ref, dt, stamp, age, now)
+        if not self._cmd_fed:
+            self._u_sent = v
+        return v
+
+    def _p_law(self, ref, pred):
+        p = self.p
+        e = ref - pred
+        if abs(e) <= p['pos_tolerance']:
+            return 0.0, e
+        v = max(-p['max_linear_speed'], min(p['max_linear_speed'], p['kv'] * e))
+        if 0.0 < abs(v) < p['min_linear_speed']:
+            v = math.copysign(p['min_linear_speed'], v)
+        return v, e
+
+    def _observed_prediction(self, x, stamp, age, now, dt):
+        p = self.p
+        if self._obs is None:
+            self._obs = PositionObserver(tau=p['x_obs_tau'], gain=p['x_obs_gain'], latency=p['pose_latency'], k1=p['x_obs_k1'],
+                                         k2=p['x_obs_k2'], deadband_v=p['deadband_v'])
+        self._obs.deadband = self.deadband('v')
+        if now is None:
+            self._clock += dt
+            now = self._clock
+        self._obs.advance(now, self._u_sent)
+        if stamp != self._obs_stamp:
+            self._obs_stamp = stamp
+            self._obs.correct(now - max(age, 0.0), x)
+            self._obs.advance(now, self._u_sent)
+        return self._obs.predicted_rest(p['lead_v'])
+
+    def _step(self, x, ref, dt, stamp, age, now):
+        p = self.p
+        if self.ref is None or abs(ref - self.ref) > 1e-9:
+            self.ref = ref
+            self._reset()
+        pose = (x, 0.0, 0.0)
+        if stamp is None:
+            pred = self._predict(pose, dt)[0]
+        else:
+            pred = self._predict_timed(pose, stamp, age)[0]
+            self._adapt_deadband('v', self._u_sent, self.v_est, dt)
+            if p['x_use_observer']:
+                pred = self._observed_prediction(x, stamp, age, now, dt)
+        tol = p['pos_tolerance']
+
+        def pid(v, e):
+            """P law plus the optional integral term (anti-windup), near the target."""
+            if p['ki_v'] > 0.0:
+                lim = 0.5 * p['max_linear_speed'] / p['ki_v']
+                self._i = max(-lim, min(lim, self._i + e * dt)) if abs(e) < 0.15 else 0.0
+                v = max(-p['max_linear_speed'], min(p['max_linear_speed'], v + p['ki_v'] * self._i))
+            return v
+
+        if p['rest_window'] <= 0.0:                                  # P / PI / PD / PID without the final layer
+            v, e = self._p_law(ref, pred)
+            if abs(e) > tol:
+                v = pid(v, e)
+            self.reached = v == 0.0
+            return self._shape(v, 0.0)[0]
+        if self._fine == 'hold':
+            if abs(ref - x) <= p['hold_band'] * tol:
+                return 0.0
+            self._reset()
+        if self._fine == 'drive':
+            v, e = self._p_law(ref, pred)
+            if abs(e) > tol:
+                return self._shape(pid(v, e), 0.0)[0]
+            self._fine, self._wait, self._min_wait = 'settle', 0, 0
+        if self._fine == 'settle':
+            self._wait += 1
+            if self._wait <= self._min_wait or (
+                    not self._at_rest(dt) and self._wait <= int(p['rest_timeout'] / dt) + self._min_wait):
+                return 0.0
+            e = ref - self._mean_pose(pose)[0]                       # true error of the settled robot
+            if abs(e) <= tol or self._retries >= p['rest_retries']:
+                self._fine = 'hold'
+                self.reached = True
+                return 0.0
+            self._retries += 1
+            vp = p['pulse_v'] or (p['deadband_v'] * 1.10 if p['deadband_v'] > 0.0 else 0.03)
+            self._pulse_left = max(1, round(abs(e) / (vp * dt))) + int(p['pulse_extra'])
+            self._pulse_v = math.copysign(vp, e)
+            self._fine = 'pulse'
+        self._pulse_left -= 1
+        if self._pulse_left <= 0:
+            self._fine, self._wait = 'settle', 0
+            self._min_wait = int(p['settle_time'] / dt)
+            self._clear_rest_history()
+        return self._shape(self._pulse_v, 0.0)[0]
