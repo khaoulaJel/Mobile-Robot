@@ -18,7 +18,7 @@ yaw_controller:
   ros__parameters:
     state_topic: /diff_cont/odom
     cmd_topic: /cmd_vel_tracker
-    yaw_ref: 0.0              # hold the start heading until you set a reference: ros2 param set /yaw_controller yaw_ref 45.0
+    yaw_ref: 90.0             # target heading: pi/2 (degrees, use_degrees below); change live: ros2 param set /yaw_controller yaw_ref 45.0
     use_degrees: true
     kp: 0.8
     max_angular_speed: 0.5

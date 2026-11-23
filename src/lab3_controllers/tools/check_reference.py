@@ -11,6 +11,7 @@ Checks (explicit limits, exit code 1 if any fails):
   4  coefficient changed while running      -> parameter accepted and the next pose reference still reached (<= 2 cm)
   5  invalid coefficients (k_beta > 0, polar) -> rejected: the robot stays stopped (|v|, |w| = 0 for 2 s)
   6  coefficients repaired                  -> motion resumes and the reference is reached (<= 2 cm)
+  7  node restarted with the initial target heading pi/2 (no topic message) -> heading pi/2 within 1 deg
 """
 import math
 import os
@@ -172,6 +173,19 @@ def main():
         e_pos = math.hypot(0.30 - x, 0.20 - y)
         check('6 coefficients repaired, motion resumes', done and e_pos <= 0.02,
               f'position error {e_pos * 100:.2f} cm (limit 2), settled={done}')
+        os.killpg(procs[1].pid, signal.SIGTERM)                   # 7: the target heading pi/2 is built in
+        procs[1].wait(timeout=10)
+        procs.append(subprocess.Popen(
+            ['ros2', 'run', 'lab3_controllers', 'reference_controller', '--ros-args', '-r', f'__node:={NODE}',
+             '-p', 'state_topic:=/odom', '-p', 'cmd_topic:=/diff_cont/cmd_vel_unstamped', '-p', 'start_delay:=1.0',
+             '-p', 'relative_to_start:=false', '-p', 'max_angular_speed:=1.0', '-p', 'tolerance:=0.005', '-p', 'kp:=1.0',
+             '-p', 'use_initial_yaw_reference:=true', '-p', f'initial_yaw_reference:={math.pi / 2}'],
+            stdout=log, stderr=subprocess.STDOUT, start_new_session=True))
+        probe.spin(2.0)
+        done = probe.settle(60)
+        e_yaw = abs(math.degrees(wrap(math.pi / 2 - probe.pose[2])))
+        check('7 initial target heading pi/2 (no message sent)', done and e_yaw <= 1.0,
+              f'heading error {e_yaw:.2f} deg (limit 1), settled={done}')
     finally:
         probe.destroy_node()
         rclpy.shutdown()
@@ -182,7 +196,7 @@ def main():
                 pass
         log.close()
     print(f'passed: {sum(results)}   failed: {len(results) - sum(results)}')
-    return 0 if all(results) and len(results) == 6 else 1
+    return 0 if all(results) and len(results) == 7 else 1
 
 
 if __name__ == '__main__':

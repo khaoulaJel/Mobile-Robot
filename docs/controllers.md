@@ -41,7 +41,7 @@ tuned in the model is what runs on the robot.
 | state | `state_topic` (default `/diff_cont/odom`) | Odometry, PoseStamped, Pose or PoseWithCovarianceStamped (auto-detected) |
 | command | `cmd_topic` (default `/cmd_vel_tracker`) | `geometry_msgs/Twist` |
 
-The newest reference wins; until one arrives the node commands zero. `relative_to_start: true` reads the references in the frame of the first measured pose.
+The newest reference wins; until one arrives the node commands zero, unless `use_initial_yaw_reference: true` gives it a target heading at start (`initial_yaw_reference`; the template config uses pi/2, the heading the professor asked for, as an absolute heading in the odom frame: `relative_to_start: false`). `relative_to_start: true` reads the references in the frame of the first measured pose.
 The control law is the shared `PathTracker` (pose reference) or `YawTracker` (heading reference), so it is the same tested code as the other nodes, with the same
 safety behaviour (acceleration limits, stop when the state is stale, zero commands on shutdown).
 

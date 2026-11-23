@@ -14,8 +14,10 @@ reference_controller:
     cmd_topic: /cmd_vel_tracker
     reference_topic: /reference
     reference_yaw_topic: /reference_yaw
-    use_degrees: false            # unit of the /reference_yaw number
-    relative_to_start: true       # references are relative to the robot's first measured pose
+    use_degrees: false            # unit of the /reference_yaw number and of initial_yaw_reference
+    relative_to_start: false      # false: references are absolute headings/positions in the state frame (odom); true: relative to the first pose
+    use_initial_yaw_reference: true   # the professor's target: hold heading pi/2 from the start (a /reference or /reference_yaw message overrides it)
+    initial_yaw_reference: 1.5708     # rad (pi/2)
     start_delay: 3.0              # s
     max_linear_accel: 0.4         # m/s^2
     max_angular_accel: 1.5        # rad/s^2

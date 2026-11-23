@@ -7,7 +7,8 @@ ROS parameters that can be loaded from a file or changed while the robot runs.
     <state_topic>     Odometry / PoseStamped / Pose / PoseWithCovarianceStamped (auto-detected)
     -> <cmd_topic>    geometry_msgs/Twist         v (m/s) and w (rad/s)
 
-The newest reference wins. Until the first reference arrives the node commands zero.
+The newest reference wins. Until the first reference arrives the node commands zero, unless `use_initial_yaw_reference` gives it a target heading
+at start (`initial_yaw_reference`, e.g. 1.5708 for pi/2).
 
 Coefficients (kv, kw, k_yaw, kp, tolerances, limits, ...) are the parameters listed in tracker.py (DEFAULTS and
 YAW_DEFAULTS). Give them in a file when you start the node, e.g. the numbers you receive on the robot:
@@ -55,6 +56,8 @@ class ReferenceController(Node):
         d('reference_topic', '/reference')
         d('reference_yaw_topic', '/reference_yaw')
         d('use_degrees', False)               # unit of the /reference_yaw number
+        d('use_initial_yaw_reference', False)  # start with a target heading, no topic message needed
+        d('initial_yaw_reference', 0.0)       # that target heading (rad, or degrees with use_degrees); a topic reference overrides it
         d('relative_to_start', False)         # references are relative to the first measured pose
         d('max_linear_accel', 0.4)            # m/s^2, 0 = off
         d('max_angular_accel', 3.0)           # rad/s^2, 0 = off
@@ -91,6 +94,12 @@ class ReferenceController(Node):
                                       float(g('state_wait_timeout')), float(g('state_jump_warn')))
         self.create_subscription(PoseStamped, g('reference_topic'), self.on_pose_reference, 10)
         self.create_subscription(Float64, g('reference_yaw_topic'), self.on_yaw_reference, 10)
+        if bool(g('use_initial_yaw_reference')):
+            self.kind = 'yaw'
+            yaw0 = float(g('initial_yaw_reference'))
+            self.ref = (0.0, 0.0, math.radians(yaw0) if self.degrees else yaw0)
+            self.rebuild = True
+            self.get_logger().info(f'initial target heading {math.degrees(self.ref[2]):.1f} deg')
         self.add_on_set_parameters_callback(self.on_parameters)
         self.create_timer(self.dt, self.control_step)
         self.get_logger().info(
