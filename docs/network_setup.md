@@ -13,6 +13,16 @@ scan from a lidar you did not connect. Pick a number from 1 to 100 that no other
 export ROS_DOMAIN_ID=<your number>
 ```
 
+**Our domain is 12.** One script per machine writes the whole network configuration (domain, CycloneDDS file with the right addresses, start scripts), and can be
+run again whenever an IP address changes (the router can change the Pi's address):
+
+```bash
+# on the Pi (needs the laptop's address, shown by `hostname -I` in WSL):
+bash ~/Mobile-Robot/src/lab3_controllers/tools/pi_setup.sh <LAPTOP_IP> 12      # also tests the Arduino link; then: bash ~/start_robot.sh
+# in WSL on the laptop (needs the Pi's address, shown by `hostname -I` on the Pi):
+bash src/lab3_controllers/tools/laptop_setup.sh <PI_IP> 12                     # then open a new terminal and: bash ~/start_laptop_stack.sh
+```
+
 Check before moving anything: `ros2 topic info /diff_cont/odom` must show `Publisher count: 1`, and `ros2 node list | sort | uniq -d` must print nothing.
 `tools/robot_session.sh` refuses to run on domain 0 and checks this.
 
