@@ -1,0 +1,42 @@
+# Reference controller: the reference comes from a topic, the state comes from a topic, the coefficients are below.
+#
+#   reference (pose)   ros2 topic pub --once /reference geometry_msgs/msg/PoseStamped \
+#                         "{pose: {position: {x: 0.5, y: 0.0}, orientation: {z: 0.0, w: 1.0}}}"
+#   reference (yaw)    ros2 topic pub --once /reference_yaw std_msgs/msg/Float64 "{data: 0.7854}"      # rad (45 deg)
+#   change a number    ros2 param set /reference_controller kv 0.6        (the controller restarts from the present pose)
+#
+# THE COEFFICIENTS: the values below are the project's defaults, tuned in simulation. When you are given the numbers for
+# the real robot, put them here (or in your own file: ros2 launch lab3_controllers reference.launch.py config:=/path/file.yaml).
+reference_controller:
+  ros__parameters:
+    # --- connection (real robot: wheel odometry in, joystick-overridable command out) ---
+    state_topic: /diff_cont/odom
+    cmd_topic: /cmd_vel_tracker
+    reference_topic: /reference
+    reference_yaw_topic: /reference_yaw
+    use_degrees: false            # unit of the /reference_yaw number
+    relative_to_start: true       # references are relative to the robot's first measured pose
+    start_delay: 3.0              # s
+    max_linear_accel: 0.4         # m/s^2
+    max_angular_accel: 1.5        # rad/s^2
+
+    # --- pose reference (go to x, y, then align the heading): strategy stop_turn | polar | pure_pursuit ---
+    strategy: stop_turn
+    kv: 0.8                       # 1/s   linear gain: v = kv * distance * cos(bearing error)
+    kw: 3.0                       # 1/s   bearing gain: w = kw * bearing error
+    k_yaw: 1.0                    # 1/s   final-heading gain
+    turn_in_place_deg: 35.0       # rotate in place first when the bearing error is larger than this
+    max_linear_speed: 0.1         # m/s   conservative for the first run on the real robot
+    max_angular_speed: 0.5        # rad/s
+    pos_tolerance: 0.02           # m
+    yaw_tolerance: 0.03           # rad
+
+    # --- yaw reference (turn in place): w = kp * (reference - yaw) ---
+    kp: 0.8                       # 1/s
+    tolerance: 0.03               # rad
+
+    # --- robot-specific compensation (all 0 = off): fill from tools/measure_response.py when the robot is measured ---
+    lead_v: 0.0                   # s   coasting time, forward
+    lead_w: 0.0                   # s   coasting time, turning
+    deadband_v: 0.0               # m/s smallest command that moves the robot
+    deadband_w: 0.0               # rad/s

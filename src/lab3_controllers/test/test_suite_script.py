@@ -29,6 +29,6 @@ def test_the_new_real_robot_tests_are_in_the_suite():
     share that part); the others are defined once and called on both the full and the shortcut path."""
     s = read()
     for name, minimum in (('t_launch_params', 2), ('t_measure', 3), ('t_symbolic', 3), ('t_circle_p', 3),
-                          ('t_lab_square', 3), ('t_lab_yaw', 3)):
+                          ('t_lab_square', 3), ('t_lab_yaw', 3), ('t_reference', 2)):
         assert f'{name}()' in s, f'{name} is not defined'
         assert s.count(name) >= minimum, f'{name} is not called where expected ({s.count(name)} occurrences)'

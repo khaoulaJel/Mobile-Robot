@@ -60,6 +60,7 @@ t_build() {
     [ -f "$WS/install/lab3_controllers/lib/lab3_controllers/yaw_controller" ]    || { echo "yaw_controller missing"; return 1; }
 }
 t_safety() { timeout 420 python3 -u "$WS/src/lab3_controllers/tools/test_safety.py"; }
+t_reference() { timeout 400 python3 -u "$WS/src/lab3_controllers/tools/check_reference.py"; }     # reference from a topic, live coefficients
 t_gazebo_up() {
     start_bg "$OUT/gazebo.log" ros2 launch lab3_gazebo gazebo.launch.py gui:=false
     GZ_PID=$LAST_PID
@@ -237,7 +238,9 @@ t_launch_params() {     # which topics does each launch file really give the nod
         "yaw.launch.py config:=hardware.yaml|yaw_controller|/cmd_vel_tracker|/diff_cont/odom"
         "yaw.launch.py|yaw_controller|/diff_cont/cmd_vel_unstamped|/odom"
         "symbolic.launch.py|symbolic_controller|/diff_cont/cmd_vel_unstamped|/odom"
-        "symbolic.launch.py cmd_topic:=/cmd_vel_tracker state_topic:=/diff_cont/odom|symbolic_controller|/cmd_vel_tracker|/diff_cont/odom")
+        "symbolic.launch.py cmd_topic:=/cmd_vel_tracker state_topic:=/diff_cont/odom|symbolic_controller|/cmd_vel_tracker|/diff_cont/odom"
+        "reference.launch.py|reference_controller|/cmd_vel_tracker|/diff_cont/odom"
+        "reference.launch.py cmd_topic:=/x state_topic:=/y|reference_controller|/x|/y")
     for spec in "${specs[@]}"; do
         IFS='|' read -r args node cmd state <<< "$spec"
         start_bg "$OUT/launch_params.log" ros2 launch lab3_controllers $args use_sim_time:=false
@@ -318,6 +321,7 @@ echo "##### 2. build";           run_test "fresh colcon build"  t_build
 if [ "$FAIL" -eq 0 ]; then
     echo "##### 3. safety (no Gazebo)"; run_test "safety tests (stale odom, shutdown zeros, invalid params)" t_safety
     run_test "launch files give the right state/command topics (config file vs override; hardware.yaml -> /cmd_vel_tracker)" t_launch_params
+    run_test "reference controller: reference from a topic (pose, yaw), coefficients changed while running, invalid ones rejected" t_reference
     echo "##### 4. Gazebo integration"; run_test "Gazebo up, /odom and cmd topic present" t_gazebo_up
     if [ "$FAIL" -eq 0 ] && [ -n "${ONLY_LAB:-}" ]; then
         # ONLY_LAB=1 bash run_all.sh <dir>: just the professor-robot emulation tests (faster than the full suite)

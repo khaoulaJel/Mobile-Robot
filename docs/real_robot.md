@@ -12,6 +12,29 @@ The controllers' safety features: speed and acceleration limits, immediate stop 
 emergency stop: keep one reachable and have someone ready to cut motor power. Nothing below has been
 run on hardware yet.
 
+## Robot day: the short version (everything else in this guide is the detail)
+
+Already done in simulation: all code, tests and configs. What needs the robot: the real numbers and the first motion.
+
+```bash
+# 0. hardware: motor battery connected and switched on (the driver needs it; the Arduino alone is powered by USB),
+#    USB cable Pi <-> Arduino secured, robot on the floor with 1.5 m x 1.5 m free, joystick in hand (it overrides everything)
+# 1. start the robot side (docs/network_setup.md):  Pi      ros2 launch articubot_one hardware.launch.py lidar:=false
+#                                                   laptop  ./run_desktop.sh
+# 2. from the laptop, in this order:
+bash src/lab3_controllers/tools/robot_session.sh check        # odometry rate, no duplicate nodes, mux connected
+bash src/lab3_controllers/tools/robot_session.sh measure      # real deadband / coasting; copy the printed lines into your coefficients file
+COEFFS=/path/to/the_numbers.yaml bash src/lab3_controllers/tools/robot_session.sh reference     # leave running
+bash src/lab3_controllers/tools/robot_session.sh send-yaw 0.35          # first test: a 20 degree turn
+bash src/lab3_controllers/tools/robot_session.sh send-pose 0.3 0 0      # then a short straight move
+bash src/lab3_controllers/tools/robot_session.sh set kv 0.6             # tune a coefficient while it runs
+bash src/lab3_controllers/tools/robot_session.sh stop
+# square / circle: ros2 launch lab3_controllers motion.launch.py config:=hardware.yaml use_sim_time:=false
+```
+
+If nothing moves: motor battery first (without it the encoders read 0 and the wheels stay still), then `ros2 topic hz /diff_cont/odom`, then the Pi's IP
+(a DHCP change breaks SSH and the DDS peer file; reserve the Pi's address in the router).
+
 ## The robot's software (professor's Pi workspace `robot_lab_ws_wheel_odometry_only.zip`, received 2026-11-23)
 
 Read from the files (`articubot_one`, `diffdrive_arduino`, and `CC_ros2_ws.zip` inside it). **Confirmed by the files, not yet by the robot.**

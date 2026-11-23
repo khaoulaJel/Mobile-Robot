@@ -27,28 +27,31 @@ Test: a UDP packet sent from the Pi to the laptop must arrive (`python3 -c` with
 
 ## 3. CycloneDDS with fixed peers (both machines)
 
-Multicast discovery did not work between the Pi and WSL, and with several interfaces every node was discovered twice. Fix: one interface, no
-multicast, the other machine as the only peer.
+Multicast discovery between the Pi and WSL did not work, and with several interfaces every node was discovered twice. Fix: one interface, multicast only for local
+discovery (`spdp`), and the other machine plus the machine itself as peers.
 
-Laptop `~/cdds.xml` (Pi at 192.168.0.112, laptop at 192.168.0.110):
+Laptop `~/cdds.xml` (Pi at 192.168.0.112, laptop at 192.168.0.110; use your own addresses):
 
 ```xml
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain id="any">
     <General>
       <Interfaces><NetworkInterface address="192.168.0.110"/></Interfaces>
-      <AllowMulticast>false</AllowMulticast>
+      <AllowMulticast>spdp</AllowMulticast>
     </General>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>
       <MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>
-      <Peers><Peer address="192.168.0.112"/></Peers>
+      <Peers>
+        <Peer address="192.168.0.112"/>
+        <Peer address="192.168.0.110"/>
+      </Peers>
     </Discovery>
   </Domain>
 </CycloneDDS>
 ```
 
-The Pi's `~/cdds.xml` is the same with the two addresses swapped. In every terminal on both machines:
+The Pi's `~/cdds.xml` is the same with the interface address and the two peers swapped. Do not switch multicast fully off: the Pi's own processes (controller manager, spawner) then cannot find each other and `joint_broad` fails to configure, and new processes on the laptop (tests, `ros2 topic pub`) take several seconds to connect, so short command bursts are lost. In every terminal on both machines:
 
 ```bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=0 ROS_LOCALHOST_ONLY=0
@@ -84,6 +87,14 @@ Both machines also need synchronised clocks.
 ## 6. Arduino check without ROS
 
 `python3-serial` and 57600 baud on `/dev/ttyACM0`: the command `e` returns the encoder counts (`0 0` at rest), `m 0 0` returns `OK` and moves nothing.
+
+## Hardware findings (2026-11-23)
+
+- The Arduino Uno talks to the Pi over USB (`/dev/ttyACM0`, 57600 baud). `m left right` sets wheel speeds in encoder counts per 30 Hz loop (31 counts = about
+  0.1 m/s), `o left right` sets raw PWM, `e` returns the encoder counts. A USB disconnect (loose plug) crashes the driver with `Input/output error`: secure the plug.
+- The motor driver (L298N type) needs its own battery: with only USB power the commands are accepted (`OK`) and the encoders stay at 0. With the battery connected the
+  wheels follow `m 31 31` with about 4 % speed error, and both encoders count the same (forward) or opposite (turn).
+- The router can change the Pi's address (DHCP). Then SSH fails with "No route to host" while ROS may still work. Reserve the Pi's address in the router.
 
 ## Known behaviour
 

@@ -30,6 +30,34 @@ The path is a flat list `[x, y, theta, ...]` or a generated circle (`path_shape:
 The control logic lives in `lab3_controllers/tracker.py` (`PathTracker`, `YawTracker`; a GO -> ALIGN -> DONE state machine, one small method per strategy) and is shared by the ROS nodes and the model tools, so what is
 tuned in the model is what runs on the robot.
 
+## Reference controller (reference and state from topics, coefficients as parameters)
+
+`lab3_controllers/reference_controller.py`. A generic node for when the reference is not fixed in a file:
+
+| Input / output | Topic (parameter) | Type |
+| --- | --- | --- |
+| reference: go to a pose | `/reference` (`reference_topic`) | `geometry_msgs/PoseStamped` (x, y, heading from the quaternion) |
+| reference: turn in place | `/reference_yaw` (`reference_yaw_topic`) | `std_msgs/Float64` (rad, or degrees with `use_degrees`) |
+| state | `state_topic` (default `/diff_cont/odom`) | Odometry, PoseStamped, Pose or PoseWithCovarianceStamped (auto-detected) |
+| command | `cmd_topic` (default `/cmd_vel_tracker`) | `geometry_msgs/Twist` |
+
+The newest reference wins; until one arrives the node commands zero. `relative_to_start: true` reads the references in the frame of the first measured pose.
+The control law is the shared `PathTracker` (pose reference) or `YawTracker` (heading reference), so it is the same tested code as the other nodes, with the same
+safety behaviour (acceleration limits, stop when the state is stale, zero commands on shutdown).
+
+**Coefficients.** Every parameter of `tracker.py` (`kv`, `kw`, `k_yaw`, `kp`, tolerances, speed limits, `lead_*`, `deadband_*`, `strategy`, ...) is a ROS
+parameter. Give them in a file when the numbers are known (`config/reference_controller.yaml` is the template with the project defaults):
+
+```bash
+ros2 launch lab3_controllers reference.launch.py config:=/path/to/the_numbers.yaml
+ros2 param set /reference_controller kv 0.6      # change while running: the controller restarts from the present pose
+ros2 topic pub --once /reference geometry_msgs/msg/PoseStamped "{pose: {position: {x: 0.5, y: 0.0}, orientation: {z: 0.0, w: 1.0}}}"
+ros2 topic pub --once /reference_yaw std_msgs/msg/Float64 "{data: 0.7854}"
+```
+
+Invalid coefficients (for example `k_beta > 0` with the polar strategy) are rejected with an error and the robot stays stopped until they are repaired.
+Test: `tools/check_reference.py` (simulated robot, six strict checks, also part of `tools/run_all.sh`).
+
 ## Compensation for a robot that drops small commands and responds slowly
 
 Code: `lab3_controllers/compensation.py`. All off by default (Gazebo behaviour is unchanged); enabled by `config/lab_robot.yaml` and `config/hardware.yaml`.
@@ -56,6 +84,8 @@ Typical coasting times and the deadband of a given robot are measured with `tool
 | `calibrate_odometry.py`, `check_state_source.py`, `trial_stats.py` | odometry calibration, state-topic inspection, repeatability statistics |
 | `lab_robot_relay.py`, `lab_robot_gazebo_check.py` | put the command filter and identified plant in front of Gazebo to test the nodes against a deadband/slow robot |
 | `simulink_replay/` | replay a command stream through the Simulink filter and state-space blocks and compare with the Python model (MATLAB) |
+| `check_reference.py` | strict test of the reference controller against a simulated robot |
+| `robot_session.sh` | robot-day helper: `check`, `measure`, `reference`, `send-pose`, `send-yaw`, `set`, `stop` |
 | `generate_symbolic.py`, `symbolic_sim.py` | build the symbolic model and controller; closed-loop simulation of it |
 | `preview_lqr.py`, `tune_preview.py`, `lqr_compare.py` | experimental preview LQR (linear MPC) with the identified plant: better on smooth curves, sensitive to unmodelled delay; not used by the nodes |
 | `evaluate.py`, `plot_results.py`, `check_results.py`, `check_circle.py`, `validate_yaw.py`, `fake_robot.py`, `test_safety.py` | log evaluation, plots, acceptance checks, safety tests |

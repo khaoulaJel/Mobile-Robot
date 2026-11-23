@@ -18,6 +18,7 @@ plus the tools to tune, test and commission them in simulation (a Python model a
 | Heading control (P law) | `yaw_controller`: `w = kp * wrap(yaw_ref - yaw)`, reference changeable at run time | `ros2 launch lab3_controllers yaw.launch.py` |
 | Path tracking (P laws) | `motion_controller`: strategies `stop_turn`, `polar`, `pure_pursuit`; waypoint list or built-in circle | `ros2 launch lab3_controllers motion.launch.py` |
 | Symbolic control | `symbolic_controller`: cell abstraction of the kinematic model, transition table with all successor cells, synthesized policy; 1 m-diameter circle | `ros2 launch lab3_controllers symbolic.launch.py` |
+| Reference controller (generic) | `reference_controller`: the reference comes from a topic (`/reference` pose, `/reference_yaw` heading), the state from a topic, the coefficients are parameters (file, or live with `ros2 param set`) | `ros2 launch lab3_controllers reference.launch.py` |
 | Real-robot behaviour (command deadband, slow response) | optional compensation in the shared control code: command shaping, stopping-point prediction, corrective pulses | `config:=lab_robot.yaml` / `hardware.yaml` |
 | Commissioning | `tools/measure_response.py` (latency, coasting time, deadband), `tools/calibrate_odometry.py`, `tools/check_state_source.py` | see `docs/real_robot.md` |
 
@@ -105,6 +106,7 @@ measurement tool. It exits non-zero if any check fails.
 | Square 0.5 m, `stop_turn` (Gazebo, 10 runs) | 0.78 +/- 0.03 cm, 0.55 +/- 0.02 deg |
 | Circle of 1 m diameter, tangent start (Gazebo) | max distance from the circle 0.39 cm (`stop_turn`), 0.26 cm (`pure_pursuit`) |
 | 14 path shapes on the model of a deadband/slow robot | path error 0.2-1.6 cm, final heading error at most 0.45 deg (earlier settings: up to 4.4 cm and 33 deg) |
+| Reference controller (simulated robot, 0.15 s lag, strict limits) | pose reference 0.83 cm / 0.45 deg, yaw reference 0.23 deg, coefficient changes while running accepted, invalid coefficients rejected (`tools/check_reference.py`) |
 | Symbolic controller | 345,888 cells; lap inside the +-8 cm tube on the exact model; in Gazebo 7.6-7.8 cm worst distance (little margin) |
 
 Details: `results/lab_robot_results.md`, `results/symbolic/summary.md`.

@@ -24,6 +24,7 @@ setup(
             'yaw_controller = lab3_controllers.yaw_controller:main',
             'motion_controller = lab3_controllers.motion_controller:main',
             'symbolic_controller = lab3_controllers.symbolic_controller:main',
+            'reference_controller = lab3_controllers.reference_controller:main',
         ],
     },
 )
