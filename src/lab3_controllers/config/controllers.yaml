@@ -1,0 +1,31 @@
+# COMPETITION configuration (default): lowest error in Gazebo, tuned by tools/sensitivity.py.
+# Tolerances are tight; on a real robot with deadband use config:=robust.
+yaw_controller:
+  ros__parameters:
+    state_topic: /odom
+    cmd_topic: /diff_cont/cmd_vel_unstamped
+    yaw_ref: 90.0
+    use_degrees: true
+    kp: 1.0
+    max_angular_speed: 1.0
+    tolerance: 0.005
+
+motion_controller:
+  ros__parameters:
+    state_topic: /odom
+    cmd_topic: /diff_cont/cmd_vel_unstamped
+    # strategy: stop_turn (default, safest: stop + align at every point) | polar (fast,
+    # rounds corners) | pure_pursuit (best for curves like the circle)
+    strategy: stop_turn
+    path_shape: waypoints      # waypoints | circle  (circle_radius, circle_points, circle_direction, circle_laps)
+    relative_to_start: true
+    use_degrees: false
+    # flat list: x, y, theta, x, y, theta, ...  (0.5 m square, CCW)
+    waypoints: [0.5, 0.0, 0.0,
+                0.5, 0.5, 1.5708,
+                0.0, 0.5, 3.1416,
+                0.0, 0.0, 0.0]
+    max_linear_speed: 0.2
+    max_angular_speed: 1.0
+    pos_tolerance: 0.01
+    yaw_tolerance: 0.01

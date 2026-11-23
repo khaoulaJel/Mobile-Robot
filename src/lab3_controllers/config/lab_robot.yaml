@@ -1,0 +1,61 @@
+# LAB-ROBOT configuration: for the professor's robot as described in his Simulink files
+# (robot_mimo_identification.slx, chart `input_filter`, and the identified velocity model):
+#   * commands outside the feasible diamond |v|/0.3 + |w|/2.5 <= 1 are DROPPED by the robot,
+#   * commands inside the deadband |v| <= 0.04 and |w| <= 0.2 are DROPPED by the robot,
+#   * the velocity response is slow: coasting after a command stops is equivalent to 0.61 s (v) and 1.0 s (w).
+# Tuned with tools/tune_lab_plant.py on six shapes and validated on eight other shapes, odometry noise,
+# +-15 % gain error and extra latency (tools/robustness.py, results/lab_robot_results.md).
+# SIMULATION ONLY: the identified plant comes from the supplied dataset, whose provenance is unverified.
+#
+#   ros2 launch lab3_controllers motion.launch.py config:=lab_robot.yaml use_sim_time:=false
+#   ros2 launch lab3_controllers yaw.launch.py    config:=lab_robot.yaml use_sim_time:=false
+yaw_controller:
+  ros__parameters:
+    state_topic: /odom
+    cmd_topic: /diff_cont/cmd_vel_unstamped
+    yaw_ref: 90.0
+    use_degrees: true
+    kp: 1.0
+    max_angular_speed: 1.0
+    tolerance: 0.01
+    # robot command filter (the controller never sends a command the robot would drop)
+    diamond_v: 0.3
+    diamond_w: 2.5
+    deadband_v: 0.04
+    deadband_w: 0.2
+    # slow plant: predict the rest heading, wait for rest, correct with exact minimum-size pulses
+    lead_w: 0.8
+    vel_filter: 0.7
+    vel_window: 5
+    rest_window: 1.0
+
+motion_controller:
+  ros__parameters:
+    state_topic: /odom
+    cmd_topic: /diff_cont/cmd_vel_unstamped
+    strategy: stop_turn
+    path_shape: waypoints
+    relative_to_start: true
+    use_degrees: false
+    waypoints: [0.5, 0.0, 0.0,
+                0.5, 0.5, 1.5708,
+                0.0, 0.5, 3.1416,
+                0.0, 0.0, 0.0]
+    kv: 0.8
+    kw: 2.2
+    k_yaw: 0.8
+    turn_in_place_deg: 15.0
+    max_linear_speed: 0.1
+    max_angular_speed: 1.0
+    pos_tolerance: 0.01
+    yaw_tolerance: 0.01
+    smooth_yaw_tolerance: 0.21     # no pointless in-place turns at smooth curve points (12 deg)
+    diamond_v: 0.3
+    diamond_w: 2.5
+    deadband_v: 0.04
+    deadband_w: 0.2
+    lead_v: 0.3
+    lead_w: 0.8
+    vel_filter: 0.7
+    vel_window: 5
+    rest_window: 1.0

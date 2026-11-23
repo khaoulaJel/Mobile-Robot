@@ -1,0 +1,51 @@
+# REAL ROBOT, FIRST RUN (Raspberry Pi stack from the professor's robot_lab_ws_wheel_odometry_only.zip).
+# Conservative on purpose: the real deadband and response are NOT measured yet (tools/measure_response.py does that).
+#
+# Topics (from the workspace files):
+#   state   /diff_cont/odom         wheel odometry straight from the Pi's diff_drive_controller (30 Hz, no network hop).
+#                                   /odometry/filtered is only an EKF-smoothed copy of the same wheel velocities (extra lag).
+#   command /cmd_vel_tracker        input of the laptop's twist_mux with the LOWEST priority (10): the joystick (priority 100)
+#                                   overrides it at once; each mux input and the Pi's diff_drive time out after 0.5 s.
+#
+#   ros2 launch lab3_controllers motion.launch.py config:=hardware.yaml state_topic:=/diff_cont/odom \
+#        cmd_topic:=/cmd_vel_tracker use_sim_time:=false
+#   ros2 launch lab3_controllers yaw.launch.py    config:=hardware.yaml state_topic:=/diff_cont/odom \
+#        cmd_topic:=/cmd_vel_tracker use_sim_time:=false
+#
+# After tools/measure_response.py: put its lead_v / lead_w / deadband_v / deadband_w lines into the motion_controller
+# section (and lead_w / deadband_* into yaw_controller) and switch strategy settings toward config/lab_robot.yaml.
+yaw_controller:
+  ros__parameters:
+    state_topic: /diff_cont/odom
+    cmd_topic: /cmd_vel_tracker
+    yaw_ref: 0.0              # hold the start heading until you set a reference: ros2 param set /yaw_controller yaw_ref 45.0
+    use_degrees: true
+    kp: 0.8
+    max_angular_speed: 0.5
+    max_angular_accel: 1.5
+    tolerance: 0.03
+
+motion_controller:
+  ros__parameters:
+    state_topic: /diff_cont/odom
+    cmd_topic: /cmd_vel_tracker
+    strategy: stop_turn
+    path_shape: waypoints
+    relative_to_start: true
+    use_degrees: false
+    start_delay: 3.0
+    waypoints: [0.5, 0.0, 0.0,
+                0.5, 0.5, 1.5708,
+                0.0, 0.5, 3.1416,
+                0.0, 0.0, 0.0]
+    kv: 0.6
+    kw: 2.0
+    k_yaw: 0.8
+    lookahead: 0.20
+    blend_radius: 0.08
+    max_linear_speed: 0.10
+    max_angular_speed: 0.5
+    max_linear_accel: 0.3
+    max_angular_accel: 1.5
+    pos_tolerance: 0.02
+    yaw_tolerance: 0.03

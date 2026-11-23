@@ -1,0 +1,37 @@
+# ROBUST configuration: for slower / less ideal motors (deadband, noise). Use with
+#   ros2 launch lab3_controllers motion.launch.py config:=robust.yaml use_sim_time:=false
+# Relaxed tolerances, lower speeds and gentler accelerations, longer pure-pursuit look-ahead.
+yaw_controller:
+  ros__parameters:
+    state_topic: /odom
+    cmd_topic: /diff_cont/cmd_vel_unstamped
+    yaw_ref: 90.0
+    use_degrees: true
+    kp: 0.8
+    max_angular_speed: 0.5
+    max_angular_accel: 1.5
+    tolerance: 0.02
+
+motion_controller:
+  ros__parameters:
+    state_topic: /odom
+    cmd_topic: /diff_cont/cmd_vel_unstamped
+    strategy: stop_turn
+    path_shape: waypoints
+    relative_to_start: true
+    use_degrees: false
+    waypoints: [0.5, 0.0, 0.0,
+                0.5, 0.5, 1.5708,
+                0.0, 0.5, 3.1416,
+                0.0, 0.0, 0.0]
+    kv: 0.6
+    kw: 2.0
+    k_yaw: 0.8
+    lookahead: 0.20
+    blend_radius: 0.08
+    max_linear_speed: 0.10
+    max_angular_speed: 0.5
+    max_linear_accel: 0.3
+    max_angular_accel: 1.5
+    pos_tolerance: 0.015
+    yaw_tolerance: 0.015
