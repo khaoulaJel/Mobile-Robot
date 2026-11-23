@@ -1,0 +1,53 @@
+# Reference controller for the PROFESSOR'S ROBOT as described in his Simulink files (same numbers as lab_robot.yaml):
+#   * commands inside the deadband |v| <= 0.04 m/s and |w| <= 0.2 rad/s are DROPPED by the robot,
+#   * commands outside the diamond |v|/0.3 + |w|/2.5 <= 1 are DROPPED,
+#   * slow response: it keeps moving after a command stops (about 0.6 s forward, 1.0 s turning).
+# Without this compensation a turn stops a few degrees short of the target (the last slow commands are below the deadband).
+# With it the controller never sends a command the robot would drop, predicts where the robot will come to rest, waits for rest and
+# corrects the remaining error with minimum-size pulses.
+#
+#   ros2 launch lab3_controllers reference.launch.py config:=reference_lab_robot.yaml \
+#        cmd_topic:=/diff_cont/cmd_vel_unstamped state_topic:=/diff_cont/odom
+#
+# Then send the target:  ros2 topic pub --once /reference_yaw std_msgs/msg/Float64 "{data: 1.5708}"      # pi/2
+# Change a number while it runs:  ros2 param set /reference_controller deadband_w 0.25
+# When the real numbers for the robot are known, edit the values below (tools/measure_response.py prints them).
+reference_controller:
+  ros__parameters:
+    state_topic: /diff_cont/odom
+    cmd_topic: /diff_cont/cmd_vel_unstamped
+    reference_topic: /reference
+    reference_yaw_topic: /reference_yaw
+    use_degrees: false
+    relative_to_start: false              # absolute references in the odom frame
+    use_initial_yaw_reference: false      # start idle, wait for a reference
+    start_delay: 1.0
+    max_linear_accel: 0.4
+    max_angular_accel: 1.5
+
+    # --- pose reference (go to x, y, then align the heading) ---
+    strategy: stop_turn
+    kv: 0.8
+    kw: 2.2
+    k_yaw: 0.8
+    turn_in_place_deg: 15.0
+    max_linear_speed: 0.1
+    max_angular_speed: 1.0
+    pos_tolerance: 0.01
+    yaw_tolerance: 0.01
+    smooth_yaw_tolerance: 0.21
+
+    # --- yaw reference (turn in place) ---
+    kp: 1.0
+    tolerance: 0.01                       # rad (0.6 deg)
+
+    # --- the robot's command filter and slow response (shared by both) ---
+    diamond_v: 0.3
+    diamond_w: 2.5
+    deadband_v: 0.04
+    deadband_w: 0.2
+    lead_v: 0.3
+    lead_w: 0.8
+    vel_filter: 0.7
+    vel_window: 5
+    rest_window: 1.0

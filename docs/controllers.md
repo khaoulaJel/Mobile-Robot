@@ -55,6 +55,8 @@ ros2 topic pub --once /reference geometry_msgs/msg/PoseStamped "{pose: {position
 ros2 topic pub --once /reference_yaw std_msgs/msg/Float64 "{data: 0.7854}"
 ```
 
+`config/reference_lab_robot.yaml` is the preset for the professor's robot model (deadband 0.04 m/s and 0.2 rad/s, slow response): on that model the plain P law ends 1-4 deg off the target after overshooting by 6-21 deg, the preset ends within 0.3 deg (`tools/yaw_bench.py`). Use it with `reference.launch.py config:=reference_lab_robot.yaml`.
+
 Invalid coefficients (for example `k_beta > 0` with the polar strategy) are rejected with an error and the robot stays stopped until they are repaired.
 Test: `tools/check_reference.py` (simulated robot, six strict checks, also part of `tools/run_all.sh`).
 
