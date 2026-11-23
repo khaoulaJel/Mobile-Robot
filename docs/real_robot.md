@@ -32,6 +32,12 @@ bash src/lab3_controllers/tools/robot_session.sh stop
 # square / circle: ros2 launch lab3_controllers motion.launch.py config:=hardware.yaml use_sim_time:=false
 ```
 
+To find out where an unexpected position change comes from, record the run (read-only) in a third terminal and read the verdict:
+
+```bash
+python3 src/lab3_controllers/tools/log_run.py --seconds 60      # start it, then run the test; prints WHEEL ODOMETRY, MAP POSE and a VERDICT
+```
+
 If nothing moves: motor battery first (without it the encoders read 0 and the wheels stay still), then `ros2 topic hz /diff_cont/odom`, then the Pi's IP
 (a DHCP change breaks SSH and the DDS peer file; reserve the Pi's address in the router).
 

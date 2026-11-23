@@ -101,6 +101,7 @@ Typical coasting times and the deadband of a given robot are measured with `tool
 | `calibrate_odometry.py`, `check_state_source.py`, `trial_stats.py` | odometry calibration, state-topic inspection, repeatability statistics |
 | `lab_robot_relay.py`, `lab_robot_gazebo_check.py` | put the command filter and identified plant in front of Gazebo to test the nodes against a deadband/slow robot |
 | `simulink_replay/` | replay a command stream through the Simulink filter and state-space blocks and compare with the Python model (MATLAB) |
+| `log_run.py` | read-only recorder of wheel odometry, map pose and commands during a run; its verdict says whether an unexpected position change comes from the robot (does not turn on the spot), from SLAM corrections (the map pose jumps), or from our commands |
 | `check_reference.py` | strict test of the reference controller against a simulated robot (8 checks) |
 | `yaw_real_sim.py`, `tune_heading_real.py`, `effective_params.py` | heading under the real pose-source conditions; coefficient search with unseen validation cases; the full parameter set of a run |
 | `robot_session.sh` | robot-day helper: `check`, `measure`, `reference`, `send-pose`, `send-yaw`, `set`, `stop` |
