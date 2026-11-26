@@ -60,6 +60,7 @@ t_build() {
     [ -f "$WS/install/lab3_controllers/lib/lab3_controllers/yaw_controller" ]    || { echo "yaw_controller missing"; return 1; }
 }
 t_safety() { timeout 420 python3 -u "$WS/src/lab3_controllers/tools/test_safety.py"; }
+t_p_controller() { timeout 560 python3 -u "$WS/src/lab3_controllers/tools/check_p_controller.py"; }     # the real-robot P controller node
 t_reference() { timeout 400 python3 -u "$WS/src/lab3_controllers/tools/check_reference.py"; }     # reference from a topic, live coefficients
 t_gazebo_up() {
     start_bg "$OUT/gazebo.log" ros2 launch lab3_gazebo gazebo.launch.py gui:=false
@@ -321,6 +322,7 @@ echo "##### 2. build";           run_test "fresh colcon build"  t_build
 if [ "$FAIL" -eq 0 ]; then
     echo "##### 3. safety (no Gazebo)"; run_test "safety tests (stale odom, shutdown zeros, invalid params)" t_safety
     run_test "launch files give the right state/command topics (config file vs override; hardware.yaml -> /cmd_vel_tracker)" t_launch_params
+    run_test "p_controller node: heading, drive, pose on an unknown robot over ROS topics; live coefficients; stale stop" t_p_controller
     run_test "reference controller: reference from a topic (pose, yaw), coefficients changed while running, invalid ones rejected" t_reference
     echo "##### 4. Gazebo integration"; run_test "Gazebo up, /odom and cmd topic present" t_gazebo_up
     if [ "$FAIL" -eq 0 ] && [ -n "${ONLY_LAB:-}" ]; then

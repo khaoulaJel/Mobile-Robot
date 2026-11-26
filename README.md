@@ -18,6 +18,7 @@ plus the tools to tune, test and commission them in simulation (a Python model a
 | Heading control (P law) | `yaw_controller`: `w = kp * wrap(yaw_ref - yaw)`, reference changeable at run time | `ros2 launch lab3_controllers yaw.launch.py` |
 | Path tracking (P laws) | `motion_controller`: strategies `stop_turn`, `polar`, `pure_pursuit`; waypoint list or built-in circle | `ros2 launch lab3_controllers motion.launch.py` |
 | Symbolic control | `symbolic_controller`: cell abstraction of the kinematic model, transition table with all successor cells, synthesized policy; 1 m-diameter circle | `ros2 launch lab3_controllers symbolic.launch.py` |
+| **P controller for the real robot (recommended)** | `p_controller`: wheel-odometry feedback placed in the map frame; PD, then pulses; learns deadband, coasting time and gain. References: heading, distance, pose. Fresh simulated robots: heading 0.28 deg, distance 0.70 cm mean (not yet run on the real robot; `results/real_robot/p_controller_report.md`) | `ros2 launch lab3_controllers p_controller.launch.py` |
 | Reference controller (generic) | `reference_controller`: the reference comes from a topic (`/reference` pose, `/reference_yaw` heading), the state from a topic, the coefficients are parameters (file, or live with `ros2 param set`) | `ros2 launch lab3_controllers reference.launch.py` |
 | Real-robot behaviour (command deadband, slow response) | optional compensation in the shared control code: command shaping, stopping-point prediction, corrective pulses | `config:=lab_robot.yaml` / `hardware.yaml` |
 | Commissioning | `tools/measure_response.py` (latency, coasting time, deadband), `tools/calibrate_odometry.py`, `tools/check_state_source.py` | see `docs/real_robot.md` |
@@ -90,7 +91,7 @@ Network, firewall, CycloneDDS peers and start order that worked on the real setu
 ## Tests
 
 ```bash
-cd src/lab3_controllers && PYTHONPATH=. python3 -m pytest -q test      # 76 unit and regression tests, no ROS graph needed
+cd src/lab3_controllers && PYTHONPATH=. python3 -m pytest -q test      # 103 unit and regression tests, no ROS graph needed
 bash src/lab3_controllers/tools/run_all.sh                             # acceptance suite in Gazebo (strict numeric limits)
 ```
 

@@ -60,6 +60,14 @@ ros2 topic pub --once /reference_yaw std_msgs/msg/Float64 "{data: 0.7854}"
 Invalid coefficients (for example `k_beta > 0` with the polar strategy) are rejected with an error and the robot stays stopped until they are repaired.
 Test: `tools/check_reference.py` (simulated robot, six strict checks, also part of `tools/run_all.sh`).
 
+## p_controller: the recommended P controller for the real robot
+
+Feedback is what the robot **measures** (wheel odometry pose, speed and turn rate), placed in the map frame by `/robot_pose`. PD far from the target; near it, pulses whose
+length is proportional to the error; the robot's deadband, coasting time and gain are learned while running. Same structure for the heading and the driven distance, chosen by a
+fair comparison with P, PI, PD and PID. References: `/reference_yaw` (heading), `/reference_x` (drive a distance), `/reference` (pose). Run:
+`ros2 launch lab3_controllers p_controller.launch.py`. Design, evidence and limits: `results/real_robot/p_controller_report.md`.
+It supersedes the heading presets of `reference_controller` described below. Validated in simulation and over ROS topics, not yet on the real robot.
+
 ## The P family on a robot with a deadband and a slow, late, freezing state (heading and position)
 
 Defended design, from a fair study (`results/real_robot/tuning_report.md`): P, PI, PD, PID and PID + rest/pulse layer, each tuned with the same optimiser and budget, judged on 300

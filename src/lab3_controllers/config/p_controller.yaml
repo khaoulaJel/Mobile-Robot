@@ -1,0 +1,78 @@
+# p_controller: the P-family controller for the real robot (lab3_controllers/servo.py). Feedback: wheel odometry (measured pose, speed and
+# turn rate) moved into the map frame by /robot_pose. The values below are the code defaults; the heading ones were tuned by
+# tools/servo_study.py on robots the controller is not told about. See results/real_robot/p_controller_report.md.
+#
+#   ros2 launch lab3_controllers p_controller.launch.py                       # sends to /cmd_vel_tracker (joystick overrides)
+#   ros2 topic pub --once /reference_yaw std_msgs/msg/Float64 "{data: 1.5708}"     # heading pi/2 in the map frame
+#   ros2 topic pub --once /reference_x   std_msgs/msg/Float64 "{data: 0.5}"        # 0.5 m forward along the present heading
+#   ros2 topic pub --once /reference geometry_msgs/msg/PoseStamped "{pose: {position: {x: 0.5, y: 0.2}, orientation: {w: 1.0}}}"
+#   ros2 param set /p_controller heading.u_max 0.6                              # change a coefficient while it runs
+#   ros2 param dump /p_controller > coefficients_used.yaml                      # record what was used
+p_controller:
+  ros__parameters:
+    odom_topic: /diff_cont/odom
+    map_topic: /robot_pose            # '' = work in the wheel-odometry frame (no LiDAR)
+    cmd_topic: /cmd_vel_tracker       # the professor's twist_mux input with the LOWEST priority: the joystick overrides it
+    use_degrees: false
+    state_timeout: 0.5                # s without odometry -> stop
+    map_blend: 0.5
+    steer_gain: 1.5
+    face_tolerance: 0.12
+    position_tolerance: 0.02
+    log_csv: ''                       # e.g. /home/<you>/runs/run1.csv: every control step, what was sent and what was learned
+    # ---- turning (rad, rad/s) ----
+    heading.kp: 2.042
+    heading.ki: 0.0
+    heading.lead: 1.051
+    heading.lead_min: 0.1
+    heading.lead_max: 2.5
+    heading.u_max: 0.914
+    heading.accel: 2.0
+    heading.tol: 0.012
+    heading.hold: 2.0
+    heading.u_min: 0.252
+    heading.u_min_floor: 0.03
+    heading.u_min_cap: 0.6
+    heading.adapt: true
+    heading.stall_time: 0.82
+    heading.stall_range: 1.6
+    heading.grow: 1.313
+    heading.shrink: 0.936
+    heading.pulses: true
+    heading.pulse_below: 0.252
+    heading.near_max: 0.8
+    heading.pulse_max: 1.0
+    heading.pulse_share: 0.804
+    heading.rest_rate: 0.02
+    heading.rest_time: 0.302
+    heading.settle_min: 0.743
+    heading.settle_max: 3.154
+    heading.rate_filter: 0.748
+    # ---- driving (m, m/s) ----
+    linear.kp: 0.7609
+    linear.ki: 0.0
+    linear.lead: 1.0776
+    linear.lead_min: 0.1
+    linear.lead_max: 2.5
+    linear.u_max: 0.2
+    linear.accel: 0.4
+    linear.tol: 0.0075
+    linear.hold: 2.0
+    linear.u_min: 0.0574
+    linear.u_min_floor: 0.015
+    linear.u_min_cap: 0.1
+    linear.adapt: true
+    linear.stall_time: 0.7839
+    linear.stall_range: 1.6
+    linear.grow: 1.1272
+    linear.shrink: 0.8819
+    linear.pulses: true
+    linear.pulse_below: 0.0359
+    linear.near_max: 0.25
+    linear.pulse_max: 1.0
+    linear.pulse_share: 0.9338
+    linear.rest_rate: 0.004
+    linear.rest_time: 0.5935
+    linear.settle_min: 0.8741
+    linear.settle_max: 4.742
+    linear.rate_filter: 0.849
