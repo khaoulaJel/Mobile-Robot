@@ -1,0 +1,133 @@
+{
+ "best": {
+  "dead_fix": 0.08,
+  "dead_imp": 0.093,
+  "u_min": 0.3,
+  "pulse_share": 0.7,
+  "tol": 0.009,
+  "pulse_below": 0.25,
+  "lead": 0.1,
+  "settle_min": 0.743
+ },
+ "the measured robot itself (new turns) | old controller (as run on the robot)": {
+  "within1": 0.0,
+  "mean": 3.5792152484650237,
+  "p95": 4.338748644905153,
+  "worst": 4.682149051071605,
+  "within15": 0.0,
+  "within2": 0.0,
+  "settle": 25.000000000000004,
+  "over": 0.0,
+  "chatter": 5.833333333333333
+ },
+ "the measured robot itself (new turns) | fix, untuned": {
+  "within1": 1.0,
+  "mean": 0.29491947702646715,
+  "p95": 0.6429009078503198,
+  "worst": 0.6873037627756158,
+  "within15": 1.0,
+  "within2": 1.0,
+  "settle": 5.796333333333333,
+  "over": 0.045846470092707294,
+  "chatter": 0.0
+ },
+ "the measured robot itself (new turns) | fix, tuned": {
+  "within1": 1.0,
+  "mean": 0.26935232346495946,
+  "p95": 0.4862326132805144,
+  "worst": 0.5283916357670463,
+  "within15": 1.0,
+  "within2": 1.0,
+  "settle": 2.316666666666667,
+  "over": 0.07849412487163104,
+  "chatter": 0.0
+ },
+ "neighbours +-20 % (never used) | old controller (as run on the robot)": {
+  "within1": 0.0,
+  "mean": 3.8270355621157055,
+  "p95": 4.840369487095423,
+  "worst": 8.09156244456825,
+  "within15": 0.0,
+  "within2": 0.0,
+  "settle": 25.000000000000004,
+  "over": 0.0,
+  "chatter": 5.66
+ },
+ "neighbours +-20 % (never used) | fix, untuned": {
+  "within1": 1.0,
+  "mean": 0.3386092227609148,
+  "p95": 0.6590574421723743,
+  "worst": 0.7796212656122994,
+  "within15": 1.0,
+  "within2": 1.0,
+  "settle": 5.7319999999999975,
+  "over": 0.21797107386481382,
+  "chatter": 0.0
+ },
+ "neighbours +-20 % (never used) | fix, tuned": {
+  "within1": 1.0,
+  "mean": 0.24383464162809568,
+  "p95": 0.5092730938223182,
+  "worst": 0.6145568028830157,
+  "within15": 1.0,
+  "within2": 1.0,
+  "settle": 2.219666666666667,
+  "over": 0.20577167082471468,
+  "chatter": 0.0
+ },
+ "far neighbours +-40 % (beyond training) | old controller (as run on the robot)": {
+  "within1": 0.0,
+  "mean": 4.4009314196161595,
+  "p95": 10.139662926420083,
+  "worst": 11.447204405685895,
+  "within15": 0.0,
+  "within2": 0.0033333333333333335,
+  "settle": 24.9415,
+  "over": 0.0,
+  "chatter": 5.573333333333333
+ },
+ "far neighbours +-40 % (beyond training) | fix, untuned": {
+  "within1": 1.0,
+  "mean": 0.32195119092333696,
+  "p95": 0.6376959751699032,
+  "worst": 0.7136249396424251,
+  "within15": 1.0,
+  "within2": 1.0,
+  "settle": 6.262333333333334,
+  "over": 0.6310220987885916,
+  "chatter": 0.0
+ },
+ "far neighbours +-40 % (beyond training) | fix, tuned": {
+  "within1": 1.0,
+  "mean": 0.25988368696645114,
+  "p95": 0.5086703083556434,
+  "worst": 0.574400419992999,
+  "within15": 1.0,
+  "within2": 1.0,
+  "settle": 2.4716666666666667,
+  "over": 0.40631249356332105,
+  "chatter": 0.0
+ },
+ "plain robots | defaults": {
+  "within1": 0.9933333333333333,
+  "mean": 0.2848605051770521,
+  "p95": 0.7072520832597267,
+  "worst": 1.056869715356539,
+  "within15": 1.0,
+  "within2": 1.0,
+  "settle": 8.361666666666665,
+  "over": 1.3957143079531857,
+  "chatter": 0.10666666666666667
+ },
+ "plain robots | fix, tuned": {
+  "within1": 0.8466666666666667,
+  "mean": 0.552533258074371,
+  "p95": 1.7859845853246545,
+  "worst": 3.0920476089421176,
+  "within15": 0.9333333333333333,
+  "within2": 0.9533333333333334,
+  "settle": 15.867333333333336,
+  "over": 25.33237693923936,
+  "chatter": 1.1
+ }
+}

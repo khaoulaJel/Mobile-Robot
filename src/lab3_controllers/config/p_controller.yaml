@@ -42,6 +42,11 @@ p_controller:
     heading.pulse_below: 0.252
     heading.near_max: 0.8
     heading.pulse_max: 1.0
+    heading.dead_fix: 0.0
+    heading.dead_imp: 0.0
+    heading.dead_same: 0.0
+    heading.dead_step: 0.04
+    heading.dead_extra_max: 0.25
     heading.pulse_share: 0.804
     heading.rest_rate: 0.02
     heading.rest_time: 0.302
@@ -70,6 +75,11 @@ p_controller:
     linear.pulse_below: 0.0359
     linear.near_max: 0.25
     linear.pulse_max: 1.0
+    linear.dead_fix: 0.0
+    linear.dead_imp: 0.0
+    linear.dead_same: 0.0
+    linear.dead_step: 0.04
+    linear.dead_extra_max: 0.25
     linear.pulse_share: 0.9338
     linear.rest_rate: 0.004
     linear.rest_time: 0.5935

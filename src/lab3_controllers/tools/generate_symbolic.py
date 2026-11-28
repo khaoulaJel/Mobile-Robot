@@ -21,13 +21,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..'))
 from lab3_controllers import symbolic as sy  # noqa: E402
 
-PARAMS = dict(radius=0.5, tube=0.08, dx=0.005, n_th=72, v=0.1, tau=1.0, heading_band=math.radians(45.0), n_goals=12)
+PARAMS = dict(radius=0.5, tube=0.08, dx=0.005, n_th=72, v=0.1, tau=1.0, heading_band=math.radians(45.0), n_goals=12,
+              # the goal arc must be WIDER than the angle driven between two samples (v*tau/radius = 11.5 deg), or the robot can
+              # step over it and has to drive a whole circle again (+-4 deg needed about 7 circles, +-8 up to 5 with noise, +-14 about 1)
+              goal_half_deg=14.0)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out-config', default=os.path.join(HERE, '..', 'config', 'symbolic_circle.npz'))
-    ap.add_argument('--out-results', default=os.path.join(HERE, '..', '..', '..', 'results', 'symbolic'))
+    ap.add_argument('--out-results', default=os.path.join(HERE, '..', '..', '..', '..', 'results', 'symbolic'))
     ap.add_argument('--full-table', default='')
     a = ap.parse_args()
     os.makedirs(a.out_results, exist_ok=True)

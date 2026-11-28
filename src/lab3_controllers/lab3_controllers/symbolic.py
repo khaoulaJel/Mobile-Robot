@@ -164,7 +164,7 @@ class Abstraction:
 
 
 def circle_setup(radius=0.5, tube=0.08, dx=0.02, n_th=72, v=0.1, tau=0.2, turn_cells=(-3, -2, -1, 0, 1, 2, 3),
-                 heading_band=math.radians(70.0), n_goals=12):
+                 heading_band=math.radians(70.0), n_goals=12, goal_half_deg=4.0):
     """A circle of the given radius (default 1 m diameter) starting tangentially at (0, 0) heading +x, driven
     counter-clockwise: centre (0, radius). Safe set: within `tube` of the circle (cell centre margin by the
     half diagonal, so the guarantee holds for every point of the cell) and heading within the band of the tangent.
@@ -197,7 +197,7 @@ def circle_setup(radius=0.5, tube=0.08, dx=0.02, n_th=72, v=0.1, tau=0.2, turn_c
     for k in range(1, n_goals + 1):
         centre_ang = (2.0 * math.pi * k / n_goals) % (2.0 * math.pi)
         d = np.abs(((ang - centre_ang) + math.pi) % (2 * math.pi) - math.pi)
-        goals.append((d <= math.radians(4.0)) & (np.abs(radial(ex, ey)) <= 0.03) & (err_h <= math.radians(25.0)))
+        goals.append((d <= math.radians(goal_half_deg)) & (np.abs(radial(ex, ey)) <= 0.03) & (err_h <= math.radians(25.0)))
     return a, goals, dict(centre=cxy, radius=radius, tube=tube, n_goals=n_goals, tangent=tangent, radial=radial)
 
 

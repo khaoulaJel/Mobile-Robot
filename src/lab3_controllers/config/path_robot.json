@@ -1,0 +1,63 @@
+{
+  "stop_turn": {
+    "ds": 0.0513,
+    "min_linear_speed": 0.07,
+    "min_angular_speed": 0.4695,
+    "pos_tolerance": 0.01,
+    "yaw_tolerance": 0.0198,
+    "max_linear_speed": 0.1276,
+    "max_angular_speed": 0.734,
+    "kv": 0.5248,
+    "kw": 3.5839,
+    "k_yaw": 3.1376,
+    "turn_in_place_deg": 23.6551,
+    "lead_v": 0.0869,
+    "lead_w": 0.0911
+  },
+  "polar": {
+    "ds": 0.0417,
+    "min_linear_speed": 0.048,
+    "min_angular_speed": 0.2,
+    "pos_tolerance": 0.0159,
+    "yaw_tolerance": 0.0372,
+    "max_linear_speed": 0.0748,
+    "max_angular_speed": 0.8287,
+    "k_rho": 1.3143,
+    "k_alpha": 5.5057,
+    "k_beta": -0.1641,
+    "blend_radius": 0.0825,
+    "lead_v": 0.0113,
+    "lead_w": 0.0223
+  },
+  "pure_pursuit": {
+    "ds": 0.05,
+    "min_linear_speed": 0.05,
+    "min_angular_speed": 0.3,
+    "pos_tolerance": 0.015,
+    "yaw_tolerance": 0.02,
+    "max_linear_speed": 0.1,
+    "max_angular_speed": 0.8,
+    "lookahead": 0.08
+  },
+  "p_servo": {
+    "ds": 0.1298,
+    "steer_gain": 3.5596,
+    "face_tolerance": 0.1355,
+    "position_tolerance": 0.0278,
+    "linear": {
+      "dead_fix": 0.062,
+      "dead_imp": 0.0082,
+      "dead_same": 0.1004,
+      "u_min": 0.0696,
+      "u_min_cap": 0.1,
+      "tol": 0.004,
+      "pulse_share": 0.6389,
+      "pulse_below": 0.0559,
+      "lead": 0.1064,
+      "settle_min": 0.4427,
+      "kp": 0.6903,
+      "u_max": 0.1269
+    }
+  },
+  "symbolic": {}
+}

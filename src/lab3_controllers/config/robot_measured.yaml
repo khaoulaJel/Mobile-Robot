@@ -1,0 +1,19 @@
+# v2: direction-aware (v1, which passed 12/12 pi/2 turns on the robot, is robot_measured_v1.yaml; v2 is NOT yet run on it).
+# From the 47 correcting pulses of those runs: a pulse that goes the same way as the last movement loses about 0.11 s MORE.
+# Settings for OUR robot, from its own measurements (tools/robot_identify.py, 2026-11-28, 30 turn pulses).
+# Every start from rest loses about 0.08 + 0.093/|w| seconds (0.39 s at 0.3 rad/s, 0.24 s at 0.6 rad/s): shorter pulses do nothing.
+# Fit to the pulses: rms 0.62 deg. The other values were searched on simulated copies of this robot and judged on copies never
+# used (results/real_robot/measured_robot_tuning*.json). TURNING ONLY: driving has not been measured yet, so it uses the defaults.
+# Repeat the measurement if the floor, the battery type, the wheels or the load change.
+# tools/robot_test.py loads this file automatically (--profile none switches it off).
+p_controller:
+  ros__parameters:
+    heading.dead_fix: 0.062       # s     start-up loss = dead_fix + dead_imp / |command| (change of direction)
+    heading.dead_same: 0.11       # s     added when the pulse goes the same way as the last movement
+    heading.dead_imp: 0.093       # rad
+    heading.u_min: 0.3            # rad/s strength of the correcting pulses (measured down to 0.3)
+    heading.pulse_share: 0.55     #       each pulse aims at this share of the remaining error
+    heading.pulse_below: 0.15     # rad   below this the final approach is by pulses
+    heading.tol: 0.005            # rad   stop correcting below 0.29 deg
+    heading.lead: 0.1             # s     start value of the coasting time (the robot stops almost at once)
+    heading.settle_min: 0.5       # s

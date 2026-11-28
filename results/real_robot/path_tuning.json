@@ -1,0 +1,192 @@
+{
+ "model": {
+  "turn": {
+   "dead_fix": 0.0775,
+   "dead_len": 0.00825,
+   "gain": 1.04
+  },
+  "drive": {
+   "dead_fix": 0.0775,
+   "dead_len": 0.00825,
+   "gain": 1.0
+  },
+  "dead_same": 0.11,
+  "deadband": 0.005,
+  "tau": 0.04,
+  "measured": {
+   "turn": true,
+   "drive": false
+  }
+ },
+ "train_shapes": [
+  "square",
+  "circle_r40",
+  "triangle",
+  "eight"
+ ],
+ "test_shapes": [
+  "circle_r50",
+  "hexagon",
+  "rectangle",
+  "square_cw",
+  "stadium"
+ ],
+ "results": {
+  "stop_turn": {
+   "settings": {
+    "ds": 0.0513,
+    "min_linear_speed": 0.07,
+    "min_angular_speed": 0.4695,
+    "pos_tolerance": 0.01,
+    "yaw_tolerance": 0.0198,
+    "max_linear_speed": 0.1276,
+    "max_angular_speed": 0.734,
+    "kv": 0.5248,
+    "kw": 3.5839,
+    "k_yaw": 3.1376,
+    "turn_in_place_deg": 23.6551,
+    "lead_v": 0.0869,
+    "lead_w": 0.0911
+   },
+   "held_out_before": {
+    "runs": 30,
+    "finished": 30,
+    "rms_cm": 0.28699623796686835,
+    "max_cm": 0.7064436796798426,
+    "worst_cm": 1.0649331711233054,
+    "end_cm": 0.5443483812278346,
+    "end_deg": 1.1789669267104892,
+    "time_s": 50.324999999999264,
+    "cost": 1.5357615006128293
+   },
+   "held_out_after": {
+    "runs": 30,
+    "finished": 30,
+    "rms_cm": 0.1666086255190713,
+    "max_cm": 0.36995052312959403,
+    "worst_cm": 0.610644795846526,
+    "end_cm": 0.25085966738752535,
+    "end_deg": 1.8772324676912802,
+    "time_s": 47.12333333333278,
+    "cost": 1.2349492877475086
+   }
+  },
+  "polar": {
+   "settings": {
+    "ds": 0.0417,
+    "min_linear_speed": 0.048,
+    "min_angular_speed": 0.2,
+    "pos_tolerance": 0.0159,
+    "yaw_tolerance": 0.0372,
+    "max_linear_speed": 0.0748,
+    "max_angular_speed": 0.8287,
+    "k_rho": 1.3143,
+    "k_alpha": 5.5057,
+    "k_beta": -0.1641,
+    "blend_radius": 0.0825,
+    "lead_v": 0.0113,
+    "lead_w": 0.0223
+   },
+   "held_out_before": {
+    "runs": 30,
+    "finished": 30,
+    "rms_cm": 2.915081670136087,
+    "max_cm": 4.65090427730757,
+    "worst_cm": 11.813959898072286,
+    "end_cm": 0.5441042602885735,
+    "end_deg": 0.9562514863231202,
+    "time_s": 26.05333333333355,
+    "cost": 5.208720876976362
+   },
+   "held_out_after": {
+    "runs": 30,
+    "finished": 30,
+    "rms_cm": 0.9507181375743158,
+    "max_cm": 1.7282254007444102,
+    "worst_cm": 2.404244520601373,
+    "end_cm": 0.5630299019196525,
+    "end_deg": 2.081082130122326,
+    "time_s": 33.58166666666679,
+    "cost": 2.4660705282801607
+   }
+  },
+  "pure_pursuit": {
+   "settings": {
+    "ds": 0.05,
+    "min_linear_speed": 0.05,
+    "min_angular_speed": 0.3,
+    "pos_tolerance": 0.015,
+    "yaw_tolerance": 0.02,
+    "max_linear_speed": 0.1,
+    "max_angular_speed": 0.8,
+    "lookahead": 0.08
+   },
+   "held_out_before": {
+    "runs": 30,
+    "finished": 30,
+    "rms_cm": 0.4130875323600014,
+    "max_cm": 1.232775553436934,
+    "worst_cm": 2.450070303796894,
+    "end_cm": 0.5344952047229062,
+    "end_deg": 0.9478942647806865,
+    "time_s": 26.99500000000023,
+    "cost": 1.5209997139315106
+   },
+   "held_out_after": {
+    "runs": 30,
+    "finished": 30,
+    "rms_cm": 0.4130875323600014,
+    "max_cm": 1.232775553436934,
+    "worst_cm": 2.450070303796894,
+    "end_cm": 0.5344952047229062,
+    "end_deg": 0.9478942647806865,
+    "time_s": 26.99500000000023,
+    "cost": 1.5209997139315106
+   }
+  },
+  "p_servo": {
+   "settings": {
+    "ds": 0.1298,
+    "steer_gain": 3.5596,
+    "face_tolerance": 0.1355,
+    "position_tolerance": 0.0278,
+    "linear": {
+     "dead_fix": 0.062,
+     "dead_imp": 0.0082,
+     "dead_same": 0.1004,
+     "u_min": 0.0696,
+     "u_min_cap": 0.1,
+     "tol": 0.004,
+     "pulse_share": 0.6389,
+     "pulse_below": 0.0559,
+     "lead": 0.1064,
+     "settle_min": 0.4427,
+     "kp": 0.6903,
+     "u_max": 0.1269
+    }
+   },
+   "held_out_before": {
+    "runs": 30,
+    "finished": 30,
+    "rms_cm": 0.24063748696519066,
+    "max_cm": 0.8790160504007332,
+    "worst_cm": 1.5355494364211348,
+    "end_cm": 0.7001969514648536,
+    "end_deg": 0.5746526364447494,
+    "time_s": 97.53333333333474,
+    "cost": 2.115160765225842
+   },
+   "held_out_after": {
+    "runs": 30,
+    "finished": 30,
+    "rms_cm": 0.21861771717596318,
+    "max_cm": 0.802658753057042,
+    "worst_cm": 1.4220094357764568,
+    "end_cm": 0.6438855363489077,
+    "end_deg": 0.5212891639521211,
+    "time_s": 79.91499999999924,
+    "cost": 1.8247180649866825
+   }
+  }
+ }
+}

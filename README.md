@@ -8,8 +8,9 @@ Controllers for a two-wheeled differential-drive robot, written for ROS 2 Humble
 
 plus the tools to tune, test and commission them in simulation (a Python model and Gazebo) and on the real robot.
 
-> **Status:** validated in simulation only (Python model and Gazebo Classic). This code has not been run on the real robot yet;
-> `docs/real_robot.md` is the commissioning procedure.
+> **Status:** on the real robot (wheel odometry, no LiDAR yet) the heading controller `p_controller` reached pi/2 **12 of 12 times under 1 deg**
+> (mean 0.125 deg, worst 0.22 deg, as measured by odometry; plain P without deadband compensation: 0 of 6). Newer settings, drives
+> and all path results are **simulation only** until run on the robot. **Test day: `docs/test_day.md`** (one guided command).
 
 ## What is implemented
 
@@ -88,10 +89,21 @@ Both machines: same LAN, `ROS_DOMAIN_ID=0`, `ROS_LOCALHOST_ONLY=0`, `RMW_IMPLEME
 Pi build: copy `pi_ws/` to the Pi and run `colcon build --symlink-install` there. The joystick keeps priority over our controllers in `twist_mux`.
 Network, firewall, CycloneDDS peers and start order that worked on the real setup: `docs/network_setup.md`. Commissioning order (measure, first motion, tests): `docs/real_robot.md`.
 
+## Real-robot test day
+
+```bash
+bash src/lab3_controllers/tools/robot.sh guide     # connect, check, LiDAR, pi/2, identify, re-tune, paths, report
+```
+
+Paths: 15 shapes with `stop_turn`, `polar`, `pure_pursuit`, `p_servo` (+ `symbolic` on the 1 m circle); every run is logged with plots
+(`tools/robot_path.py`). Tuned on a wheel-level model of the robot (`tools/robot_model.py`, turning measured, driving predicted until
+identified). Simulated comparison on robot variants not used for tuning (all 75 runs of each waypoint controller finished, every final
+heading under 1 deg): path error rms stop_turn 0.18, p_servo 0.27, pure_pursuit 0.32, polar 1.03 cm (`results/real_robot/paths_simulated.png`).
+
 ## Tests
 
 ```bash
-cd src/lab3_controllers && PYTHONPATH=. python3 -m pytest -q test      # 103 unit and regression tests, no ROS graph needed
+cd src/lab3_controllers && PYTHONPATH=. python3 -m pytest -q test      # 132 unit and regression tests, no ROS graph needed
 bash src/lab3_controllers/tools/run_all.sh                             # acceptance suite in Gazebo (strict numeric limits)
 ```
 
@@ -109,13 +121,14 @@ measurement tool. It exits non-zero if any check fails.
 | 14 path shapes on the model of a deadband/slow robot | path error 0.2-1.6 cm, final heading error at most 0.45 deg (earlier settings: up to 4.4 cm and 33 deg) |
 | Reference controller (simulated robot, 0.15 s lag, strict limits) | pose reference 0.83 cm / 0.45 deg, yaw reference 0.23 deg, built-in target heading pi/2 0.22 deg, coefficient changes while running accepted, invalid coefficients rejected (`tools/check_reference.py`) |
 | P family on the professor's robot model (slow, late, freezing map pose; wrong-robot cases included), 300 unseen validation cases | heading: PD + observer 0.26 / 0.36 / 2.31 deg (normal / stress / wrong robot) vs plain P 4.6 / 5.9 / 8.4 deg; position: PID + observer 0.15 / 0.29 / 0.58 cm vs plain P 0.46 / 0.82 / 3.95 cm (`results/real_robot/tuning_report.md`) |
-| Symbolic controller | 345,888 cells; lap inside the +-8 cm tube on the exact model; in Gazebo 7.6-7.8 cm worst distance (little margin) |
+| Symbolic controller | 345,888 cells; one circle inside the +-8 cm tube on the exact model (3.0 cm). The earlier Gazebo figure (7.6-7.8 cm) used the earlier goal arcs, see `docs/symbolic_control.md` |
 
 Details: `results/lab_robot_results.md`, `results/symbolic/summary.md`.
 
 ## Limits
 
-- Simulation only. Whether the real robot has the command deadband and the slow response is unknown until measured (`tools/measure_response.py`).
+- On the real robot only turning has been run. Every start from rest loses about 0.08 + 0.093/|w| s: pulses shorter than that do nothing
+  (`tools/robot_identify.py`). Driving is not measured yet. Odometry cannot show wheel slip or a wrong wheel separation.
 - The symbolic guarantee holds for the kinematic model it was built on; it fails if the robot's response is slower than about 0.3 s.
 - Gazebo itself is not an ideal plant (measured: latency 0.18 s, coasting 0.39 s forward / 0.28 s turning, a drift of about 1.3 mm/s with a zero command).
 

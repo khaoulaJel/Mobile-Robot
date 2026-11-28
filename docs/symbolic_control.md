@@ -33,7 +33,12 @@ sound over-approximation. Size: 4.5 million (cell, input) pairs, 44 million succ
 Reach-avoid fixed point on the nondeterministic table: goal cells have rank 0; a cell gets rank `k+1` if some input leads **all** successors to cells of rank
 at most `k` and none to `OUT`. The rank is the guaranteed number of steps; the input achieving it is the policy. One policy per goal arc is stored
 (`config/symbolic_circle.npz`, 1.9 MB: cell list, policy, goal masks, ranks).
-Result: from the start and from any cell of the previous goal, each arc is reached within 34 steps (34 s).
+Result: the first arc is guaranteed within 2 steps from the start; every later arc within 33 steps (33 s) from any cell of the previous one.
+That worst case is a whole circle: the guarantee says the arc IS reached, not that it is reached at the first pass.
+
+**Goal arcs are +-14 deg wide.** Between two samples the robot drives 11.5 deg of the circle, so with the earlier +-4 deg arcs it
+often stepped over a goal and drove a whole circle again: the run reported before as "a lap in 216 s" was about **7 circles**
+(one circle takes 31 s).
 
 ## Run time
 
@@ -51,7 +56,15 @@ leaving the safe set; policy save/load round trip; the circle geometry.
 
 | Condition | Result |
 | --- | --- |
-| exact kinematic model | lap in 216 s, worst distance from the circle 3.6 cm: the guarantee holds |
+| exact kinematic model, present +-14 deg goals | all 12 goals in 32 s (1 circle), worst distance 3.0 cm (earlier +-4 deg goals: 216 s, about 7 circles, 3.6 cm) |
+| wheel model of our real robot (simulation, 15 runs) | all complete in 34-35 s, worst 5.4 cm (earlier goals: 157-255 s, 7.6 cm) |
+| exact model with 1.5 mm noise, with fallback, 30 runs | 30/30 complete, 1.1 circles on average, at most 2.1; worst 7.1 cm |
+| **Limit** | it stops on ENTERING the last arc, so it ends up to about 14 deg (about 10-12 cm) before the start point |
+
+The rows below were measured with the EARLIER +-4 deg policy and were not repeated:
+
+| Condition | Result |
+| --- | --- |
 | position noise 1 mm / 3 mm | without the fallback 2/10 and 1/10 laps complete; with it 10/10 |
 | first-order lag 0.15 s | completes (6.8 cm) |
 | lag 0.3 s | completes only with the fallback (8.6 cm, slightly outside the tube) |

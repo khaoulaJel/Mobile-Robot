@@ -32,6 +32,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 
+from lab3_controllers.servo import SERVO_DEFAULTS, FinalHeading
 from lab3_controllers.state_input import StateInput, StateInputError
 
 from lab3_controllers.common import (
@@ -73,6 +74,10 @@ class MotionController(Node):
         d('state_timeout', 0.5)               # s
         d('start_delay', 1.0)                 # s, wait before moving
         d('log_csv', '')                      # optional path for a data log
+        # after the last point: turn to its heading with the pulse servo (heading.* coefficients as in p_controller)
+        d('final_heading_servo', False)
+        for key, val in SERVO_DEFAULTS.items():
+            d(f'heading.{key}', val)
 
         def g(n):
             return self.get_parameter(n).value
@@ -102,6 +107,10 @@ class MotionController(Node):
         self.tracker = PathTracker(self.path, self.tparams)
         self.strategy = self.tracker.strategy
 
+        self.use_final = bool(g('final_heading_servo'))
+        self.final_params = {k: g(f'heading.{k}') for k in SERVO_DEFAULTS}
+        self.final = None
+        self.final_logged = False
         self.pose = None            # (x, y, yaw)
         self.last_state_time = None
         self.t_start = None
@@ -173,7 +182,18 @@ class MotionController(Node):
             self.publish(0.0, 0.0, limit=False)     # immediate stop, no deceleration ramp
             return
         if self.tracker.mode == DONE:
-            self.publish(0.0, 0.0)
+            if not self.use_final:
+                self.publish(0.0, 0.0)
+                return
+            if self.final is None:
+                self.final = FinalHeading(self.path[-1][2], self.final_params)
+                self.get_logger().info(f'turning to the final heading {math.degrees(self.path[-1][2]):.1f} deg with the pulse servo')
+            w = self.final.step(self.pose[2], self.dt)
+            self.publish(0.0, w, limit=False)
+            if self.final.done and not self.final_logged:
+                self.final_logged = True
+                self.get_logger().info(f'final heading done, error '
+                                       f'{math.degrees(wrap_angle(self.path[-1][2] - self.pose[2])):+.2f} deg')
             return
 
         x, y, yaw = self.pose

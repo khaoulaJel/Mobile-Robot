@@ -35,6 +35,10 @@ class Robot:
         self.x, self.y, self.th = pose
         self.v = self.w = 0.0
         self.queue = deque([(0.0, 0.0)] * max(0, int(round(c['cmd_delay'] / DT))))
+        self._on_sign, self._on_time = 0, 0.0
+        self._jitter = random.Random(c['seed'] + 17)
+        self._lost = 0.0
+        self._moved_sign = 0
         self.ident = pm.IdentifiedPlant(use_filter=False, gain=(c['gv'], c['gw'])) if c['plant'] == 'identified' else None
 
     def step(self, v_cmd, w_cmd):
@@ -49,16 +53,40 @@ class Robot:
         moved = []
         h = DT / SUB
         for _ in range(SUB):
+            if c.get('engage'):                                       # start-up loss measured on the real robot
+                w_eff = self._engaged(w_cmd, h)
+            else:
+                w_eff = w_cmd
             if self.ident:
                 self.v, self.w = v_new, w_new
             else:
                 self.v += (c['gv'] * v_cmd - self.v) * (1.0 - math.exp(-h / c['tau_v']))
-                self.w += (c['gw'] * w_cmd - self.w) * (1.0 - math.exp(-h / c['tau_w']))
+                self.w += (c['gw'] * w_eff - self.w) * (1.0 - math.exp(-h / c['tau_w']))
             self.x += self.v * math.cos(self.th) * h
             self.y += self.v * math.sin(self.th) * h
             self.th = wrap_angle(self.th + self.w * h)
             moved.append((self.v * h, self.w * h))
         return moved
+
+
+    def _engaged(self, w_cmd, h):
+        """Turning only: every start from rest loses a + b/|command| seconds before the command has any effect
+        (fitted to 30 pulses on the real robot, tools/robot_identify.py: a = 0.08 s, b = 0.093 rad)."""
+        sign = (w_cmd > 0) - (w_cmd < 0)
+        if sign == 0 or sign != self._on_sign:
+            self._on_sign, self._on_time = sign, 0.0
+            spread = self.c.get('engage_jitter', 0.0)
+            self._lost = self._jitter.uniform(-spread, spread)
+            if sign != 0 and sign == self._moved_sign:               # measured: more is lost without a change of direction
+                self._lost += self.c.get('engage_same', 0.0)
+            if sign == 0:
+                return 0.0
+        self._on_time += h
+        a, b = self.c['engage']
+        if self._on_time > a + b / abs(w_cmd) + self._lost:
+            self._moved_sign = sign
+            return w_cmd
+        return 0.0
 
 
 class Sensors:
@@ -257,6 +285,29 @@ def make_cases(n, seed=1, plant='random'):
         c['goal'] = (r * math.cos(a), r * math.sin(a), rng.uniform(-math.pi, math.pi))
         out.append(c)
     return out
+
+
+def measured_case_v2(rng, spread=0.0):
+    """measured_case plus the direction effect seen in the 47 correcting pulses of the real pi/2 runs."""
+    c = measured_case(rng, spread)
+    k = c['engage'][1] / 0.093
+    c['engage'] = (0.062 * k, 0.093 * k)
+    c['engage_same'] = 0.11 * (1.0 + rng.uniform(-spread, spread))
+    c['engage_jitter'] = 0.03
+    return c
+
+
+def measured_case(rng, spread=0.0):
+    """The robot as measured on 2026-11-28 (turning), with wheel odometry only. spread > 0 draws neighbours of it
+    (battery, floor, load): start-up loss, gain and lag vary by up to that fraction."""
+    def near(value):
+        return value * (1.0 + rng.uniform(-spread, spread))
+    k = near(1.0)
+    return dict(plant='random', seed=rng.randrange(10 ** 6), db_w=0.0, db_v=0.0, gw=near(1.04), gv=1.0,
+                tau_w=near(0.04), tau_v=0.04, cmd_delay=0.0, engage=(0.08 * k, 0.093 * k), engage_jitter=0.025,
+                odom_rate=32.7, odom_delay=0.04, noise_w=0.01, noise_v=0.003, odom_scale_w=1.0, odom_scale_v=1.0,
+                map_rate=30.0, map_delay=0.05, map_noise_th=0.0, map_noise_xy=0.0, freeze_period=0.0, freeze_len=0.0,
+                phase=0.0, jumps=[], y0=rng.uniform(-math.pi, math.pi))
 
 
 def run_heading(make_ctrl, c, hold=25.0, trace=False):

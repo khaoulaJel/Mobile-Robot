@@ -14,6 +14,6 @@
 | successors per (state, input) | mean 9.8, max 16 |
 | goals | 12 arcs of the circle |
 | winning states per goal | 81.9 % to 81.9 % of all states |
-| guaranteed steps per leg | [33, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34] (start, then from ANY cell of the previous goal) = 34 s worst case per leg |
-| build / synthesis time | 9 s / 75 s |
-| deployable controller | config/symbolic_circle.npz (1.9 MB) |
+| guaranteed steps per leg | [2, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33] (start, then from ANY cell of the previous goal) = 33 s worst case per leg |
+| build / synthesis time | 13 s / 52 s |
+| deployable controller | config/symbolic_circle.npz (1.8 MB) |

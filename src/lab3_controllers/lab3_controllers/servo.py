@@ -122,6 +122,13 @@ SERVO_DEFAULTS = dict(
     pulse_below=0.252,         #        below this error (rad or m) a settled robot is corrected by pulses (start value, see near_max)
     near_max=0.8,            #        a continuous move that overshoots RAISES that threshold (never above this): too sluggish a robot
     pulse_max=1.0,           # s      longest single pulse
+    # start-up loss: some robots lose a fixed time every time they start from rest, so a short pulse does nothing however strong.
+    # Lost time = dead_fix + dead_imp / |command| (measure with tools/robot_identify.py). Both 0 = the robot has no such loss.
+    dead_fix=0.0,            # s
+    dead_imp=0.0,            # rad (m): command x time the robot swallows at every start
+    dead_same=0.0,           # s      MORE is lost when the pulse goes the same way as the robot's last movement
+    dead_step=0.04,          # s      a pulse that did nothing makes the next ones this much LONGER ...
+    dead_extra_max=0.25,     # s      ... up to this much; only then is the command made stronger
     pulse_share=0.804,        #        aim for this share of the error (undershooting is safer than overshooting)
     rest_rate=0.02,          #        filtered |rate| below this = standing still
     rest_time=0.302,           # s      ... for this long
@@ -146,6 +153,11 @@ class AxisServo:
         self.gain = 1.0                      # achieved motion / commanded motion, from the pulses
         self.lead = p['lead']                # coasting time, measured after each move (includes every delay)
         self._coasts = 0
+        # learned corrections of the start-up loss (s), kept apart: for a pulse that changes direction and for one that does not
+        self.dead_extra = 0.0
+        self.same_extra = 0.0
+        self.moved_dir = 0                   # the way the robot last moved (+1, -1; 0 = not known): physical, survives reset()
+        self._pulse_same = False
         self.near = p['pulse_below']         # use pulses below this error; grows if continuous moves overshoot
         self.reset()
 
@@ -207,6 +219,13 @@ class AxisServo:
             return 0.0
         return self._move(error, dt)
 
+    def lost_time(self, u, same=False):
+        """Seconds a pulse of strength u loses at its start (without the learned correction); 0 = no start-up loss.
+        `same`: the pulse goes the way the robot last moved."""
+        if self.p['dead_fix'] <= 0.0 and self.p['dead_imp'] <= 0.0:
+            return 0.0
+        return self.p['dead_fix'] + self.p['dead_imp'] / max(abs(u), 1e-3) + (self.p['dead_same'] if same else 0.0)
+
     # ---- continuous PD (PID) ---------------------------------------------------------------
     def _move(self, error, dt):
         p = self.p
@@ -214,6 +233,7 @@ class AxisServo:
         if p['pulses'] and (abs(pred) <= p['tol'] or pred * error < 0):
             if abs(self.u) > 0.0:
                 self._stop = (error, self.rate)
+                self.moved_dir = 1 if self.u > 0 else -1
             self._to_settle()                # we will coast to (or past) the target: stop and look
             return 0.0
         if abs(error) <= p['tol'] and abs(self.rate) <= p['rest_rate']:
@@ -274,6 +294,11 @@ class AxisServo:
             return 0.0
         u = max(self.u_min, 1e-3)
         length = p['pulse_share'] * abs(error) / (self.gain * u)   # P law on the pulse LENGTH
+        same = self.moved_dir != 0 and (error > 0) == (self.moved_dir > 0)
+        lost = self.lost_time(u, same)
+        if lost > 0.0:
+            length += max(0.0, lost + (self.same_extra if same else self.dead_extra))   # ... plus what the start swallows
+        self._pulse_same = same
         ticks = max(1, min(int(p['pulse_max'] / dt + 0.5), int(length / dt + 0.5)))
         self._pulse_u = math.copysign(u, error)
         self._pulse = (error, self._pulse_u, ticks * dt)
@@ -295,6 +320,24 @@ class AxisServo:
         self.lead += weight * (measured - self.lead)
         self._coasts += 1
 
+    def _learn_loss(self, moved, u, length, lost):
+        """With a start-up loss, a pulse that fails was too SHORT before it was too weak: correct the lost time first."""
+        p = self.p
+        name = 'same_extra' if self._pulse_same else 'dead_extra'
+        extra = getattr(self, name)
+        useful = length - max(0.0, lost + extra)                   # the part that should have moved the robot
+        # (at least a sliver: a pulse hardly longer than the loss that did nothing was too short too)
+        if moved < 0.15 * self.gain * abs(u) * max(useful, 0.02):
+            if extra >= p['dead_extra_max'] - 1e-9:
+                self._raise_minimum(u)
+            else:
+                setattr(self, name, min(p['dead_extra_max'], extra + p['dead_step']))
+            return
+        self.moved_dir = 1 if u > 0 else -1
+        seen = length - moved / (self.gain * abs(u)) - lost        # the correction this pulse points to
+        seen = max(-lost, min(p['dead_extra_max'], seen))
+        setattr(self, name, extra + 0.4 * (seen - extra))
+
     def _learn(self, error):
         """What did the last pulse really do?"""
         p = self.p
@@ -304,6 +347,10 @@ class AxisServo:
             return
         moved = (before - error) * math.copysign(1.0, u)           # displacement in the pushed direction
         asked = abs(u) * length
+        lost = self.lost_time(u, self._pulse_same)
+        if lost > 0.0:
+            self._learn_loss(moved, u, length, lost)
+            return
         if moved < 0.15 * self.gain * asked:
             self._raise_minimum(u)                                 # ignored: the deadband is above u
             return
@@ -311,6 +358,31 @@ class AxisServo:
         if length <= 0.051 and moved > 1.8 * abs(before) and moved > 2 * p['tol']:
             # even the shortest pulse jumps too far: use a smaller command, but never one the robot is known to ignore
             self.u_min = max(p['u_min_floor'], self.ignored * 1.1, self.u_min * p['shrink'])
+
+
+class FinalHeading:
+    """After a path: turn to the final heading with the heading servo (the one measured on the robot). The turn rate is taken
+    from the pose itself, so it works with any pose source."""
+
+    def __init__(self, target, params=None, rate_window=0.15):
+        self.target, self.window = target, rate_window
+        self.servo = AxisServo(params)
+        self._history = []
+        self._t = 0.0
+
+    @property
+    def done(self):
+        return self.servo.arrived
+
+    def step(self, yaw, dt):
+        """-> turn-rate command."""
+        self._t += dt
+        self._history.append((self._t, yaw))
+        while len(self._history) > 2 and self._t - self._history[1][0] >= self.window:
+            self._history.pop(0)
+        t0, yaw0 = self._history[0]
+        rate = wrap_angle(yaw - yaw0) / (self._t - t0) if self._t - t0 > 1e-6 else 0.0
+        return self.servo.update(wrap_angle(self.target - yaw), rate, dt)
 
 
 # the same servo for the distance along a line (metres, m/s); tuned by tools/servo_study.py --axis distance
