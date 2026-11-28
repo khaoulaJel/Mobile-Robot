@@ -50,11 +50,21 @@ export CYCLONEDDS_URI=file://\$HOME/cdds.xml
 EOF
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+# the laptop stack: the professor's newest workspace (~/ros2_lab_ws) if it is there, else the older copy in the repository
+STACK="${STACK_OVERRIDE:-$HOME/ros2_lab_ws}"
+[ -x "$STACK/run_desktop.sh" ] || STACK="$REPO/laptop_ws"
+echo "laptop stack: $STACK"
 cat > "$H/start_laptop_stack.sh" <<EOF
 #!/bin/bash
-# the professor's laptop stack (robot_description, EKF, SLAM, twist_mux, joystick, RViz). Leave it running.
+# the professor's laptop stack (robot_description, wheel-odometry TF, SLAM, twist_mux, joystick, RViz). Leave it running.
 export ROS_DOMAIN_ID=$DOMAIN RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_LOCALHOST_ONLY=0 CYCLONEDDS_URI=file://\$HOME/cdds.xml
-cd "$REPO/laptop_ws" && exec ./run_desktop.sh
+cd "$STACK" && exec ./run_desktop.sh
+EOF
+# one line to prepare any other terminal: source ~/robot_env.sh
+cat > "$H/robot_env.sh" <<EOF
+source /opt/ros/humble/setup.bash
+[ -f "$REPO/install/setup.bash" ] && source "$REPO/install/setup.bash"
+export ROS_DOMAIN_ID=$DOMAIN RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_LOCALHOST_ONLY=0 CYCLONEDDS_URI=file://\$HOME/cdds.xml
 EOF
 chmod +x "$H/start_laptop_stack.sh"
 echo "written: $H/cdds.xml, $H/.bashrc block, $H/start_laptop_stack.sh"

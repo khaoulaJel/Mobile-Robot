@@ -49,11 +49,13 @@ EOF
 
 cat > "$H/start_robot.sh" <<EOF
 #!/bin/bash
-# starts the robot driver (no lidar plugged in: lidar:=false). Leave it running; stop with Ctrl+C.
+# starts the robot driver. The LiDAR is used when its port (/dev/ttyUSB0) is there: the professor's laptop stack needs it for
+# /robot_pose. Without it the driver would exit, so it is switched off with a warning. Leave this running; stop with Ctrl+C.
 source /opt/ros/humble/setup.bash
 source \$HOME/Mobile-Robot/pi_ws/install/setup.bash
 export ROS_DOMAIN_ID=$DOMAIN RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_LOCALHOST_ONLY=0 CYCLONEDDS_URI=file://\$HOME/cdds.xml
-exec ros2 launch articubot_one hardware.launch.py lidar:=false
+if [ -e /dev/ttyUSB0 ]; then LIDAR=true; else LIDAR=false; echo "WARNING: no LiDAR on /dev/ttyUSB0: starting without it (no /robot_pose on the laptop)"; fi
+exec ros2 launch articubot_one hardware.launch.py lidar:=\$LIDAR
 EOF
 chmod +x "$H/start_robot.sh"
 echo "written: $H/cdds.xml, $H/.bashrc block, $H/start_robot.sh"
